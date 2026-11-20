@@ -6,7 +6,14 @@ Desenvolvido sem consumir créditos da Lovable. Baseado em Cloudflare Workers + 
 
 ## Estado
 
-Código-fonte versionado no GitHub; publicar em produção requer configurar banco D1, segredos administrativos e confirmar DNS/serviços existentes em `snt.today` antes de apontar o domínio.
+Sistema publicado na Cloudflare (Worker + banco D1), com código versionado no GitHub. Domínios: `snt.today` e `www.snt.today`.
+
+## Contagem de cliques (20/11/2026)
+
+O painel apresenta **cliques filtrados desde a ativação desta versão**, e não simplesmente todas as requisições HTTP. Requisições `HEAD`, agentes automáticos conhecidos e pré-buscas declaradas não somam cliques. Repetições do mesmo identificador por link em 60 segundos são desconsideradas. Mesmo assim, nenhuma filtragem pode garantir 100% de visitas humanas.
+
+**Histórico:** contadores antigos permanecem no campo `links.clicks` e eventos anteriores ficam em `click_events` com `qualified=0`. O novo painel utiliza `links.filtered_clicks` e apenas eventos com `qualified=1`. Não houve exclusão dos registros antigos, nem reclassificação retroativa. Para uma instalação existente, executar uma única vez `migrations/20261120_filter_clicks.sql` antes de publicar o código atualizado.
+
 
 ## Instalação
 
