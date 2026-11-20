@@ -55,9 +55,15 @@ test('robôs e prefetch são excluídos, navegadores comuns continuam elegíveis
 test('HEAD e agentes de pré-visualização redirecionam sem contabilizar',async()=>{
   const link={id:'fcb7bd20-0a84-4d1d-93a9-24d7f3538e28',original_url:'https://example.com/noticia'};
   const queries=[];
-  const env={SESSION_SECRET:'test-secret-longer-than-thirty-two-bytes',DB:{
-    prepare(sql){queries.push(sql);return{bind(){return{first:async()=>link,run:async()=>({meta:{changes:1}})}}};}
-  }};
+  const env={
+    SESSION_SECRET:'test-secret-longer-than-thirty-two-bytes',
+    DB:{
+      prepare:(sql)=>{
+        queries.push(sql);
+        return {bind:()=>({first:async()=>link,run:async()=>({meta:{changes:1}})})};
+      }
+    }
+  };
   const tracked=[],ctx={waitUntil(p){tracked.push(p);}};
   for(const [method,ua] of [['HEAD','Mozilla/5.0'],['GET','facebookexternalhit/1.1']]){
     const req=new Request('https://snt.today/abc123',{method,headers:{'user-agent':ua}});
@@ -71,12 +77,20 @@ test('HEAD e agentes de pré-visualização redirecionam sem contabilizar',async
 test('GET humano cria só registro filtrado, repetição ignora incremento',async()=>{
   const row={id:'fcb7bd20-0a84-4d1d-93a9-24d7f3538e28',original_url:'https://example.com/noticia'};
   let insertChanges=1;const statements=[];
-  const env={SESSION_SECRET:'test-secret-longer-than-thirty-two-bytes',DB:{
-    prepare(sql){return{bind(...params){statements.push({sql,params});return{
-      first:async()=>row,
-      run:async()=>({meta:{changes:sql.startsWith('INSERT INTO click_events')?insertChanges:1}})
-    }};}};}
-  }};
+  const env={
+    SESSION_SECRET:'test-secret-longer-than-thirty-two-bytes',
+    DB:{
+      prepare:(sql)=>({
+        bind:(...params)=>{
+          statements.push({sql,params});
+          return {
+            first:async()=>row,
+            run:async()=>({meta:{changes:sql.startsWith('INSERT INTO click_events')?insertChanges:1}})
+          };
+        }
+      })
+    }
+  };
   const req=new Request('https://snt.today/abc123',{headers:{'user-agent':'Mozilla/5.0 (Linux; Android 15) Chrome/120'}});
   let pending=[];const ctx={waitUntil(p){pending.push(p);}};
   const response=await worker.fetch(req,env,ctx);
