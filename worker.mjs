@@ -97,10 +97,10 @@ function shouldCountClick(req){
   if(!ua)return false;
   // Robôs de prévia de redes sociais, indexadores e clientes automáticos conhecidos.
   // Evitar bloquear navegadores reais do Facebook (FBAN/FBAV) e do WhatsApp.
-  const botUA=/(?:facebookexternalhit|facebot|meta-externalagent|meta-externalfetcher|twitterbot|telegrambot|discordbot|slackbot|linkedinbot|pinterestbot|googlebot|bingbot|yandexbot|baiduspider|duckduckbot|applebot|crawler|spider|bot\\b|headlesschrome|lighthouse|curl\\/|wget\\/|python-requests|python-urllib|go-http-client|node-fetch|axios\\/|postmanruntime|uptimerobot|httpclient)/i;
+  const botUA=/(?:facebookexternalhit|facebot|meta-externalagent|meta-externalfetcher|twitterbot|telegrambot|discordbot|slackbot|linkedinbot|pinterestbot|googlebot|bingbot|yandexbot|baiduspider|duckduckbot|applebot|crawler|spider|bot\b|headlesschrome|lighthouse|curl\/|wget\/|python-requests|python-urllib|go-http-client|node-fetch|axios\/|postmanruntime|uptimerobot|httpclient)/i;
   if(botUA.test(ua)||/^WhatsApp\\//i.test(ua))return false;
   const purpose=['purpose','sec-purpose','x-purpose','x-moz'].map(h=>req.headers.get(h)||'').join(' ');
-  if(/\\b(prefetch|prerender|preview)\\b/i.test(purpose))return false;
+  if(/\b(prefetch|prerender|preview)\b/i.test(purpose))return false;
   if(req.cf?.botManagement?.verifiedBot===true)return false;
   const botScore=req.cf?.botManagement?.score;
   if(Number.isFinite(botScore)&&botScore<30)return false; // disponível apenas em planos compatíveis
