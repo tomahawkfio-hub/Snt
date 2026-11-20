@@ -1,0 +1,14 @@
+{
+  "name": "snt-links",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Private URL shortener on Cloudflare Workers and D1",
+  "scripts": {
+    "test": "node --test",
+    "build": "node generate-dashboard.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
