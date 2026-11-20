@@ -98,7 +98,7 @@ function shouldCountClick(req){
   // Robôs de prévia de redes sociais, indexadores e clientes automáticos conhecidos.
   // Evitar bloquear navegadores reais do Facebook (FBAN/FBAV) e do WhatsApp.
   const botUA=/(?:facebookexternalhit|facebot|meta-externalagent|meta-externalfetcher|twitterbot|telegrambot|discordbot|slackbot|linkedinbot|pinterestbot|googlebot|bingbot|yandexbot|baiduspider|duckduckbot|applebot|crawler|spider|bot\b|headlesschrome|lighthouse|curl\/|wget\/|python-requests|python-urllib|go-http-client|node-fetch|axios\/|postmanruntime|uptimerobot|httpclient)/i;
-  if(botUA.test(ua)||/^WhatsApp\\//i.test(ua))return false;
+  if(botUA.test(ua)||ua.toLowerCase().startsWith('whatsapp/'))return false;
   const purpose=['purpose','sec-purpose','x-purpose','x-moz'].map(h=>req.headers.get(h)||'').join(' ');
   if(/\b(prefetch|prerender|preview)\b/i.test(purpose))return false;
   if(req.cf?.botManagement?.verifiedBot===true)return false;
