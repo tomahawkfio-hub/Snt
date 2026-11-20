@@ -90,6 +90,22 @@ function createCode(size=7){
 }
 function referrer(req){try{return new URL(req.headers.get('referer')).hostname.slice(0,100);}catch{return 'direto';}}
 function device(req){return /mobile|android|iphone|ipad/i.test(req.headers.get('user-agent')||'')?'mobile':'desktop';}
+// Um acesso automático não deve aumentar a contagem, mas continua recebendo o redirecionamento.
+function shouldCountClick(req){
+  if(req.method!=='GET')return false; // HEAD verifica URL, não é clique.
+  const ua=(req.headers.get('user-agent')||'').trim();
+  if(!ua)return false;
+  // Robôs de prévia de redes sociais, indexadores e clientes automáticos conhecidos.
+  // Evitar bloquear navegadores reais do Facebook (FBAN/FBAV) e do WhatsApp.
+  const botUA=/(?:facebookexternalhit|facebot|meta-externalagent|meta-externalfetcher|twitterbot|telegrambot|discordbot|slackbot|linkedinbot|pinterestbot|googlebot|bingbot|yandexbot|baiduspider|duckduckbot|applebot|crawler|spider|bot\\b|headlesschrome|lighthouse|curl\\/|wget\\/|python-requests|python-urllib|go-http-client|node-fetch|axios\\/|postmanruntime|uptimerobot|httpclient)/i;
+  if(botUA.test(ua)||/^WhatsApp\\//i.test(ua))return false;
+  const purpose=['purpose','sec-purpose','x-purpose','x-moz'].map(h=>req.headers.get(h)||'').join(' ');
+  if(/\\b(prefetch|prerender|preview)\\b/i.test(purpose))return false;
+  if(req.cf?.botManagement?.verifiedBot===true)return false;
+  const botScore=req.cf?.botManagement?.score;
+  if(Number.isFinite(botScore)&&botScore<30)return false; // disponível apenas em planos compatíveis
+  return true;
+}
 async function bucket(req,secret){
   return b64(await mac(secret,'login:'+Math.floor(Date.now()/600000)+':'+(req.headers.get('cf-connecting-ip')||'unknown'))).slice(0,32);
 }
@@ -123,7 +139,7 @@ async function api(req,env,path){
   }
   if(!env.DB)return error('Banco de dados não configurado.',503);
   if(path==='/api/links'&&req.method==='GET'){
-    const r=await env.DB.prepare('SELECT id,code,original_url,title,clicks,created_at FROM links WHERE disabled=0 ORDER BY created_at DESC LIMIT 150').all();
+    const r=await env.DB.prepare('SELECT id,code,original_url,title,filtered_clicks AS clicks,created_at FROM links WHERE disabled=0 ORDER BY created_at DESC LIMIT 150').all();
     return json({links:r.results||[]});
   }
   if(path==='/api/links'&&req.method==='POST'){
@@ -147,9 +163,9 @@ async function api(req,env,path){
   }
   if(path==='/api/stats'&&req.method==='GET'){
     const [total,seven,countries]=await Promise.all([
-      env.DB.prepare('SELECT COUNT(*) AS total_links, COALESCE(SUM(clicks),0) AS total_clicks FROM links WHERE disabled=0').first(),
-      env.DB.prepare("SELECT substr(clicked_at,1,10) AS day, COUNT(*) AS clicks, COUNT(DISTINCT visitor_hash) AS visitors FROM click_events WHERE clicked_at >= datetime('now','-6 days') GROUP BY substr(clicked_at,1,10) ORDER BY day ASC").all(),
-      env.DB.prepare('SELECT country,COUNT(*) AS clicks FROM click_events GROUP BY country ORDER BY clicks DESC LIMIT 5').all()
+      env.DB.prepare('SELECT COUNT(*) AS total_links, COALESCE(SUM(filtered_clicks),0) AS total_clicks FROM links WHERE disabled=0').first(),
+      env.DB.prepare("SELECT substr(clicked_at,1,10) AS day, COUNT(*) AS clicks, COUNT(DISTINCT visitor_hash) AS visitors FROM click_events WHERE qualified=1 AND clicked_at >= datetime('now','-6 days') GROUP BY substr(clicked_at,1,10) ORDER BY day ASC").all(),
+      env.DB.prepare('SELECT country,COUNT(*) AS clicks FROM click_events WHERE qualified=1 GROUP BY country ORDER BY clicks DESC LIMIT 5').all()
     ]);
     const today=new Date().toISOString().slice(0,10);
     const todayClicks=(seven.results||[]).find(x=>x.day===today)?.clicks||0;
@@ -163,14 +179,21 @@ async function redirect(req,env,ctx,slug){
   if(!row)return new Response('Link não encontrado.',{status:404});
   const target=validateDestination(row.original_url);
   if(!target)return new Response('Destino inválido.',{status:410});
-  if(env.SESSION_SECRET){
+  if(env.SESSION_SECRET&&shouldCountClick(req)){
     ctx.waitUntil((async()=>{
       try{
         const hash=await visitorHash(req,env.SESSION_SECRET);
-        await env.DB.batch([
-          env.DB.prepare('UPDATE links SET clicks=clicks+1 WHERE id=?').bind(row.id),
-          env.DB.prepare('INSERT INTO click_events(link_id,country,referrer_domain,device,visitor_hash) VALUES(?,?,?,?,?)').bind(row.id,req.cf?.country||'XX',referrer(req),device(req),hash)
-        ]);
+        // Inserção condicional atômica: no máximo 1 clique qualificado por
+        // link + visitante (IP+UA com HMAC diário), a cada 60 segundos.
+        const result=await env.DB.prepare(
+          "INSERT INTO click_events(link_id,country,referrer_domain,device,visitor_hash,qualified) "+
+          "SELECT ?,?,?,?,?,1 WHERE NOT EXISTS ("+
+          "SELECT 1 FROM click_events WHERE link_id=? AND visitor_hash=? AND qualified=1 "+
+          "AND clicked_at>=datetime('now','-60 seconds'))"
+        ).bind(row.id,req.cf?.country||'XX',referrer(req),device(req),hash,row.id,hash).run();
+        if(result.meta?.changes===1){
+          await env.DB.prepare('UPDATE links SET filtered_clicks=filtered_clicks+1 WHERE id=?').bind(row.id).run();
+        }
       }catch(e){console.error(JSON.stringify({event:'click_tracking_error',error:String(e)}));}
     })());
   }
@@ -194,4 +217,4 @@ export default {
     }catch(e){console.error(JSON.stringify({event:'request_error',error:String(e)}));return error('Ocorreu um erro interno.',500);}
   }
 };
-export const __test={validateDestination,validateCode,createCode,signSession,verifySession};
+export const __test={validateDestination,validateCode,createCode,signSession,verifySession,shouldCountClick};
