@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS links (
   original_url TEXT NOT NULL,
   title TEXT NOT NULL DEFAULT '',
   clicks INTEGER NOT NULL DEFAULT 0,
+  filtered_clicks INTEGER NOT NULL DEFAULT 0,
   disabled INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -17,10 +18,13 @@ CREATE TABLE IF NOT EXISTS click_events (
   country TEXT NOT NULL DEFAULT 'XX',
   referrer_domain TEXT NOT NULL DEFAULT 'direto',
   device TEXT NOT NULL DEFAULT 'desktop',
-  visitor_hash TEXT NOT NULL
+  visitor_hash TEXT NOT NULL,
+  qualified INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_events_day ON click_events(clicked_at);
 CREATE INDEX IF NOT EXISTS idx_events_link ON click_events(link_id, clicked_at);
+CREATE INDEX IF NOT EXISTS idx_events_filtered_dedupe ON click_events(link_id,visitor_hash,qualified,clicked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_events_filtered_day ON click_events(qualified,clicked_at);
 
 CREATE TABLE IF NOT EXISTS login_attempts (
   bucket TEXT PRIMARY KEY,
