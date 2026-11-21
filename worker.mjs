@@ -159,7 +159,7 @@ async function api(req,env,path,ctx){
   }
   if(!env.DB)return error('Banco de dados não configurado.',503);
   if(path==='/api/links'&&req.method==='GET'){
-    const r=await env.DB.prepare('SELECT id,code,original_url,COALESCE(NULLIF(title,''),social_title) AS title,interaction_clicks AS clicks,created_at FROM links WHERE disabled=0 ORDER BY created_at DESC LIMIT 150').all();
+    const r=await env.DB.prepare('SELECT id,code,original_url,COALESCE(NULLIF(title,''),social_title) AS title,social_image,interaction_clicks AS clicks,created_at FROM links WHERE disabled=0 ORDER BY created_at DESC LIMIT 150').all();
     return json({links:r.results||[]});
   }
   if(path==='/api/links'&&req.method==='POST'){
