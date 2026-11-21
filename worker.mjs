@@ -160,6 +160,14 @@ async function api(req,env,path,ctx){
   if(!env.DB)return error('Banco de dados não configurado.',503);
   if(path==='/api/links'&&req.method==='GET'){
     const r=await env.DB.prepare("SELECT id,code,original_url,COALESCE(NULLIF(title,''),social_title) AS title,social_image,interaction_clicks AS clicks,created_at FROM links WHERE disabled=0 ORDER BY created_at DESC LIMIT 150").all();
+    // Ao abrir o painel, atualiza em segundo plano as notícias antigas sem prévia.
+    // Não acessa o link curto e não interfere nos contadores.
+    ctx.waitUntil((async()=>{
+      try{
+        const missing=await env.DB.prepare("SELECT id,original_url FROM links WHERE disabled=0 AND social_fetched_at='' ORDER BY created_at DESC LIMIT 12").all();
+        await Promise.allSettled((missing.results||[]).map(x=>saveSocialMetadata(env.DB,x.id,x.original_url)));
+      }catch(e){console.error(JSON.stringify({event:'social_backfill_error',error:String(e)}));}
+    })());
     return json({links:r.results||[]});
   }
   if(path==='/api/links'&&req.method==='POST'){
