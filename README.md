@@ -15,6 +15,20 @@ O painel apresenta **cliques filtrados desde a ativação desta versão**, e nã
 **Histórico:** contadores antigos permanecem no campo `links.clicks` e eventos anteriores ficam em `click_events` com `qualified=0`. O novo painel utiliza `links.filtered_clicks` e apenas eventos com `qualified=1`. Não houve exclusão dos registros antigos, nem reclassificação retroativa. Para uma instalação existente, executar uma única vez `migrations/20261120_filter_clicks.sql` antes de publicar o código atualizado.
 
 
+## Validação rigorosa contra cliques suspeitos (21/11/2026)
+
+O painel agora contabiliza **cliques com sinal de interação** (`interaction_clicks`). Uma navegação só entra nessa métrica se:
+
+- A solicitação for `GET`, não for identificada como pré-visualização/robô e não declarar prefetch.
+- O navegador enviar `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document` e `Sec-Fetch-User: ?1`.
+- O mesmo visitante (hash anônimo diário de IP + User-Agent) não tiver sido contado no mesmo link nos últimos 60 segundos.
+
+Outras solicitações continuam recebendo o redirecionamento normal, mas não aumentam os números. A tabela `request_audit_daily` agrega por link/data/classificação as requisições contadas, repetidas ou sem prova de interação. O painel exibe um total de solicitações descartadas dos últimos sete dias.
+
+**Importante:** `Sec-Fetch-User` é um sinal do navegador, não prova criptográfica de pessoa real. Robôs podem falsificar cabeçalhos, e navegadores antigos ou WebViews podem omitir esses sinais, gerando subcontagem. O sistema **não confirma o carregamento no site de destino**. Para medir visitantes que efetivamente chegaram ao artigo, é necessário instrumentar os sites de notícias.
+
+**Histórico preservado:** `links.clicks` é a métrica original, `links.filtered_clicks` é a primeira tentativa de filtragem, `links.interaction_clicks` é a métrica rigorosa iniciada em 21/11/2026. O campo `click_events.qualified` contém 0, 1 ou 2, respectivamente. Não reclassificamos dados antigos porque não foram guardados todos os cabeçalhos necessários para validá-los. A migração `migrations/20261121_interaction_clicks.sql` deve ser executada uma vez antes de publicar a versão rigorosa.
+
 ## Instalação
 
 1. Criar banco D1 e executar `schema.sql`.
