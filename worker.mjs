@@ -173,14 +173,15 @@ async function api(req,env,path){
     return r.meta?.changes?json({ok:true}):error('Link não encontrado.',404);
   }
   if(path==='/api/stats'&&req.method==='GET'){
-    const [total,seven,countries]=await Promise.all([
+    const [total,seven,countries,audit]=await Promise.all([
       env.DB.prepare('SELECT COUNT(*) AS total_links, COALESCE(SUM(interaction_clicks),0) AS total_clicks FROM links WHERE disabled=0').first(),
       env.DB.prepare("SELECT substr(clicked_at,1,10) AS day, COUNT(*) AS clicks, COUNT(DISTINCT visitor_hash) AS visitors FROM click_events WHERE qualified=2 AND clicked_at >= datetime('now','-6 days') GROUP BY substr(clicked_at,1,10) ORDER BY day ASC").all(),
-      env.DB.prepare('SELECT country,COUNT(*) AS clicks FROM click_events WHERE qualified=2 GROUP BY country ORDER BY clicks DESC LIMIT 5').all()
+      env.DB.prepare('SELECT country,COUNT(*) AS clicks FROM click_events WHERE qualified=2 GROUP BY country ORDER BY clicks DESC LIMIT 5').all(),
+      env.DB.prepare("SELECT classification,SUM(attempts) AS attempts FROM request_audit_daily WHERE day >= date('now','-6 days') GROUP BY classification").all()
     ]);
     const today=new Date().toISOString().slice(0,10);
     const todayClicks=(seven.results||[]).find(x=>x.day===today)?.clicks||0;
-    return json({totals:{...total,today_clicks:todayClicks},days:seven.results||[],countries:countries.results||[]});
+    return json({totals:{...total,today_clicks:todayClicks},days:seven.results||[],countries:countries.results||[],audit:audit.results||[]});
   }
   return error('Rota não encontrada.',404);
 }
