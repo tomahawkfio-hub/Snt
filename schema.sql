@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS links (
   title TEXT NOT NULL DEFAULT '',
   clicks INTEGER NOT NULL DEFAULT 0,
   filtered_clicks INTEGER NOT NULL DEFAULT 0,
+  interaction_clicks INTEGER NOT NULL DEFAULT 0,
   disabled INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -25,6 +26,19 @@ CREATE INDEX IF NOT EXISTS idx_events_day ON click_events(clicked_at);
 CREATE INDEX IF NOT EXISTS idx_events_link ON click_events(link_id, clicked_at);
 CREATE INDEX IF NOT EXISTS idx_events_filtered_dedupe ON click_events(link_id,visitor_hash,qualified,clicked_at DESC);
 CREATE INDEX IF NOT EXISTS idx_events_filtered_day ON click_events(qualified,clicked_at);
+CREATE TRIGGER IF NOT EXISTS trg_interaction_click_insert AFTER INSERT ON click_events
+WHEN NEW.qualified=2
+BEGIN
+  UPDATE links SET interaction_clicks=interaction_clicks+1 WHERE id=NEW.link_id;
+END;
+
+CREATE TABLE IF NOT EXISTS request_audit_daily (
+  link_id TEXT NOT NULL,
+  day TEXT NOT NULL,
+  classification TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (link_id,day,classification)
+);
 
 CREATE TABLE IF NOT EXISTS login_attempts (
   bucket TEXT PRIMARY KEY,
