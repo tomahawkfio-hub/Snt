@@ -7,6 +7,10 @@ CREATE TABLE IF NOT EXISTS links (
   clicks INTEGER NOT NULL DEFAULT 0,
   filtered_clicks INTEGER NOT NULL DEFAULT 0,
   interaction_clicks INTEGER NOT NULL DEFAULT 0,
+  social_title TEXT NOT NULL DEFAULT '',
+  social_description TEXT NOT NULL DEFAULT '',
+  social_image TEXT NOT NULL DEFAULT '',
+  social_fetched_at TEXT NOT NULL DEFAULT '',
   disabled INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
