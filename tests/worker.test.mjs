@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import worker, { __test } from '../worker.mjs';
 
-const { validateDestination, validateCode, createCode, signSession, verifySession, shouldCountClick }=__test;
+const { validateDestination, validateCode, createCode, signSession, verifySession, shouldCountClick, classifyRedirect }=__test;
 test('validates destinations',()=>{
   assert.equal(validateDestination('https://example.com/noticia?a=1'),'https://example.com/noticia?a=1');
   for(const u of ['javascript:alert(1)','data:text/html,hi','file:///etc/passwd','https://localhost/foo','http://127.0.0.1','http://10.0.0.8','http://192.168.1.2','http://169.254.169.254','https://username:password@example.com'])
@@ -52,53 +52,69 @@ test('robôs e prefetch são excluídos, navegadores comuns continuam elegíveis
   assert.equal(shouldCountClick(req('Mozilla/5.0',{},'HEAD')),false);
   assert.equal(shouldCountClick(req('',{})),false);
 });
-test('HEAD e agentes de pré-visualização redirecionam sem contabilizar',async()=>{
+
+test('modo rigoroso exige navegação visível iniciada pelo usuário',()=>{
+  const req=(ua,extra={},method='GET')=>new Request('https://snt.today/abc123',{method,headers:{'user-agent':ua,...extra}});
+  const human={'Sec-Fetch-Mode':'navigate','Sec-Fetch-Dest':'document','Sec-Fetch-User':'?1'};
+  assert.equal(classifyRedirect(req('Mozilla/5.0 (Android) Chrome/120',human)),'interaction');
+  assert.equal(classifyRedirect(req('Mozilla/5.0 (Android) Chrome/120')),'no_document_navigation');
+  assert.equal(classifyRedirect(req('Mozilla/5.0 (Android) Chrome/120',{'Sec-Fetch-Mode':'navigate','Sec-Fetch-Dest':'document'})),'no_user_activation');
+  assert.equal(classifyRedirect(req('Mozilla/5.0 (Android) Chrome/120',{'Sec-Fetch-Mode':'no-cors','Sec-Fetch-Dest':'image','Sec-Fetch-User':'?1'})),'no_document_navigation');
+  assert.equal(classifyRedirect(req('facebookexternalhit/1.1',human)),'automated_or_prefetch');
+  assert.equal(classifyRedirect(req('Mozilla/5.0',human,'HEAD')),'other_method');
+});
+test('verificações e prévias redirecionam sem aumentar cliques',async()=>{
   const link={id:'fcb7bd20-0a84-4d1d-93a9-24d7f3538e28',original_url:'https://example.com/noticia'};
-  const queries=[];
+  const statements=[],pending=[];
   const env={
     SESSION_SECRET:'test-secret-longer-than-thirty-two-bytes',
-    DB:{
-      prepare:(sql)=>{
-        queries.push(sql);
-        return {bind:()=>({first:async()=>link,run:async()=>({meta:{changes:1}})})};
-      }
-    }
+    DB:{prepare:(sql)=>({bind:(...params)=>{
+      statements.push({sql,params});
+      return {first:async()=>link,run:async()=>({meta:{changes:1}})};
+    }})}
   };
-  const tracked=[],ctx={waitUntil(p){tracked.push(p);}};
-  for(const [method,ua] of [['HEAD','Mozilla/5.0'],['GET','facebookexternalhit/1.1']]){
-    const req=new Request('https://snt.today/abc123',{method,headers:{'user-agent':ua}});
+  const ctx={waitUntil(p){pending.push(p);}};
+  const requests=[
+    new Request('https://snt.today/abc123',{method:'HEAD',headers:{'user-agent':'Mozilla/5.0'}}),
+    new Request('https://snt.today/abc123',{headers:{'user-agent':'facebookexternalhit/1.1'}}),
+    new Request('https://snt.today/abc123',{headers:{'user-agent':'Mozilla/5.0 Chrome/120'}})
+  ];
+  for(const req of requests){
     const res=await worker.fetch(req,env,ctx);
     assert.equal(res.status,302);
     assert.equal(res.headers.get('location'),'https://example.com/noticia');
   }
-  assert.equal(tracked.length,0);
-  assert.equal(queries.filter(sql=>sql.startsWith('INSERT')).length,0);
+  await Promise.all(pending);
+  assert.equal(statements.filter(x=>x.sql.startsWith('INSERT INTO click_events')).length,0);
+  assert.equal(statements.filter(x=>x.sql.startsWith('INSERT INTO request_audit_daily')).length,3);
 });
-test('GET humano cria só registro filtrado, repetição ignora incremento',async()=>{
+test('navegação acionada contabiliza uma vez; repetição não soma',async()=>{
   const row={id:'fcb7bd20-0a84-4d1d-93a9-24d7f3538e28',original_url:'https://example.com/noticia'};
   let insertChanges=1;const statements=[];
   const env={
     SESSION_SECRET:'test-secret-longer-than-thirty-two-bytes',
-    DB:{
-      prepare:(sql)=>({
-        bind:(...params)=>{
-          statements.push({sql,params});
-          return {
-            first:async()=>row,
-            run:async()=>({meta:{changes:sql.startsWith('INSERT INTO click_events')?insertChanges:1}})
-          };
-        }
-      })
-    }
+    DB:{prepare:(sql)=>({bind:(...params)=>{
+      statements.push({sql,params});
+      return {
+        first:async()=>row,
+        run:async()=>({meta:{changes:sql.startsWith('INSERT INTO click_events')?insertChanges:1}})
+      };
+    }})}
   };
-  const req=new Request('https://snt.today/abc123',{headers:{'user-agent':'Mozilla/5.0 (Linux; Android 15) Chrome/120'}});
-  let pending=[];const ctx={waitUntil(p){pending.push(p);}};
-  const response=await worker.fetch(req,env,ctx);
-  assert.equal(response.status,302);
-  await Promise.all(pending);
-  assert.equal(statements.filter(x=>x.sql.includes('UPDATE links SET filtered_clicks')).length,1);
-  assert.ok(statements.find(x=>x.sql.includes('NOT EXISTS')));
-  insertChanges=0;pending=[];
-  await worker.fetch(req,env,ctx);await Promise.all(pending);
-  assert.equal(statements.filter(x=>x.sql.includes('UPDATE links SET filtered_clicks')).length,1);
+  const req=new Request('https://snt.today/abc123',{headers:{
+    'user-agent':'Mozilla/5.0 (Linux; Android 15) Chrome/120',
+    'Sec-Fetch-Mode':'navigate','Sec-Fetch-Dest':'document','Sec-Fetch-User':'?1'
+  }});
+  const run=async()=>{
+    const pending=[],ctx={waitUntil(p){pending.push(p);}};
+    const response=await worker.fetch(req,env,ctx);
+    assert.equal(response.status,302);await Promise.all(pending);
+  };
+  await run();
+  assert.equal(statements.filter(x=>x.sql.startsWith('INSERT INTO click_events')).length,1);
+  assert.ok(statements.find(x=>x.sql.includes('NOT EXISTS')&&x.sql.includes('qualified=2')));
+  assert.ok(statements.find(x=>x.sql.startsWith('INSERT INTO request_audit_daily')&&x.params[2]==='counted'));
+  insertChanges=0;await run();
+  assert.equal(statements.filter(x=>x.sql.startsWith('INSERT INTO click_events')).length,2);
+  assert.ok(statements.find(x=>x.sql.startsWith('INSERT INTO request_audit_daily')&&x.params[2]==='repeat'));
 });
