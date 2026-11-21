@@ -29,6 +29,15 @@ Outras solicitações continuam recebendo o redirecionamento normal, mas não au
 
 **Histórico preservado:** `links.clicks` é a métrica original, `links.filtered_clicks` é a primeira tentativa de filtragem, `links.interaction_clicks` é a métrica rigorosa iniciada em 21/11/2026. O campo `click_events.qualified` contém 0, 1 ou 2, respectivamente. Não reclassificamos dados antigos porque não foram guardados todos os cabeçalhos necessários para validá-los. A migração `migrations/20261121_interaction_clicks.sql` deve ser executada uma vez antes de publicar a versão rigorosa.
 
+## Prévia social: título e foto ao compartilhar
+
+- A criação de um link inicia uma leitura dos metadados do artigo de destino (Open Graph, Twitter e título HTML) e os salva no D1, sem atrasar o redirecionamento.
+- Robôs de prévia identificados do Facebook/WhatsApp/X/Telegram recebem HTML com `og:title`, `og:description`, `og:image`, `og:url` e `twitter:card`. Os leitores continuam sendo redirecionados com status HTTP 302 diretamente ao artigo original.
+- Links antigos também recebem metadados quando solicitados pela primeira vez por um robô de prévia. No painel, o botão de atualizar prévia faz uma nova busca, exibe título e miniatura quando disponíveis e informa se a imagem não foi encontrada.
+- `robots.txt` permite o rastreamento dos links curtos, mas restringe as URLs administrativas.
+- **Limitações:** o site de destino precisa publicar a imagem e permitir a leitura de HTML pelo Worker. Se o Facebook já armazenou uma prévia antiga, é necessário abrir o [Depurador de Compartilhamento da Meta](https://developers.facebook.com/tools/debug/) e usar *Scrape Again* no URL curto. O Facebook controla a forma como o cartão final aparece; não há garantia de exibição.
+- Robôs de pré-visualização **não entram na contagem de cliques com interação**.
+
 ## Instalação
 
 1. Criar banco D1 e executar `schema.sql`.
