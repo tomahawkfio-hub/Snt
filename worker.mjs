@@ -1,5 +1,6 @@
 /** SNT Links — Cloudflare Workers / D1. No Lovable API or credentials. */
 import { dashboard } from './dashboard.mjs';
+import { fetchSocialMetadata, isSocialCrawler, renderSocialPreview } from './preview.mjs';
 
 const COOKIE='snt_session';
 const ALPHABET='23456789abcdefghjkmnpqrstuvwxyz';
@@ -123,7 +124,15 @@ async function bucket(req,secret){
 async function visitorHash(req,secret){
   return b64(await mac(secret,new Date().toISOString().slice(0,10)+'|'+(req.headers.get('cf-connecting-ip')||'')+'|'+(req.headers.get('user-agent')||'').slice(0,200))).slice(0,32);
 }
-async function api(req,env,path){
+async function saveSocialMetadata(db,id,destination){
+  // Usamos apenas o título, a imagem e a descrição existentes na notícia original.
+  const meta=await fetchSocialMetadata(destination);
+  await db.prepare(
+    "UPDATE links SET social_title=?,social_description=?,social_image=?,social_fetched_at=datetime('now') WHERE id=? AND original_url=?"
+  ).bind(meta.title,meta.description,meta.image,id,destination).run();
+  return meta;
+}
+async function api(req,env,path,ctx){
   if(path==='/api/session'&&req.method==='GET')return json({authenticated:await verifySession(req,env.SESSION_SECRET)});
   if(path==='/api/login'&&req.method==='POST'){
     if(!sameOrigin(req))return error('Origem não autorizada.',403);
@@ -150,7 +159,7 @@ async function api(req,env,path){
   }
   if(!env.DB)return error('Banco de dados não configurado.',503);
   if(path==='/api/links'&&req.method==='GET'){
-    const r=await env.DB.prepare('SELECT id,code,original_url,title,interaction_clicks AS clicks,created_at FROM links WHERE disabled=0 ORDER BY created_at DESC LIMIT 150').all();
+    const r=await env.DB.prepare('SELECT id,code,original_url,COALESCE(NULLIF(title,''),social_title) AS title,interaction_clicks AS clicks,created_at FROM links WHERE disabled=0 ORDER BY created_at DESC LIMIT 150').all();
     return json({links:r.results||[]});
   }
   if(path==='/api/links'&&req.method==='POST'){
@@ -163,9 +172,20 @@ async function api(req,env,path){
     for(let i=0;i<(custom?1:8);i++){
       const code=custom||createCode();
       const r=await env.DB.prepare('INSERT OR IGNORE INTO links(id,code,original_url,title) VALUES(?,?,?,?)').bind(id,code,dest,title).run();
-      if(r.meta?.changes===1)return json({link:{id,code,url:dest,title,shortUrl:new URL(req.url).origin+'/'+code}},201);
+      if(r.meta?.changes===1){
+        // A criação não depende do tempo de resposta do site original.
+        ctx.waitUntil(saveSocialMetadata(env.DB,id,dest).catch(e=>console.error(JSON.stringify({event:'social_metadata_error',error:String(e)}))));
+        return json({link:{id,code,url:dest,title,shortUrl:new URL(req.url).origin+'/'+code}},201);
+      }
     }
     return error(custom?'Esse endereço personalizado já está em uso.':'Não foi possível gerar código único.',409);
+  }
+  const refresh=path.match(/^\/api\/links\/([0-9a-f-]{36})\/refresh-preview$/i);
+  if(refresh&&req.method==='POST'){
+    const row=await env.DB.prepare('SELECT id,original_url,code FROM links WHERE id=? AND disabled=0').bind(refresh[1]).first();
+    if(!row)return error('Link não encontrado.',404);
+    const meta=await saveSocialMetadata(env.DB,row.id,row.original_url);
+    return json({preview:meta,shortUrl:new URL(req.url).origin+'/'+row.code,hasImage:!!meta.image});
   }
   const id=path.match(/^\/api\/links\/([0-9a-f-]{36})$/i);
   if(id&&req.method==='DELETE'){
@@ -187,10 +207,29 @@ async function api(req,env,path){
 }
 async function redirect(req,env,ctx,slug){
   if(!env.DB)return new Response('Serviço indisponível.',{status:503});
-  const row=await env.DB.prepare('SELECT id,original_url FROM links WHERE code=? AND disabled=0').bind(slug.toLowerCase()).first();
+  const row=await env.DB.prepare('SELECT id,code,title,original_url,social_title,social_description,social_image,social_fetched_at FROM links WHERE code=? AND disabled=0').bind(slug.toLowerCase()).first();
   if(!row)return new Response('Link não encontrado.',{status:404});
   const target=validateDestination(row.original_url);
   if(!target)return new Response('Destino inválido.',{status:410});
+  if(isSocialCrawler(req)){
+    // Social crawlers see real metadata for the SAME article a human is sent to.
+    // Their requests do not enter the click counter or the request audit.
+    let meta={title:row.social_title||row.title||'',description:row.social_description||'',image:row.social_image||''};
+    const stale=!row.social_fetched_at||(!meta.image&&(Date.now()-Date.parse(row.social_fetched_at.replace(' ','T')+'Z')>900000));
+    if(stale){
+      try{meta=await saveSocialMetadata(env.DB,row.id,target);}catch(e){
+        console.error(JSON.stringify({event:'preview_fetch_failed',error:String(e)}));
+      }
+    }
+    const shortUrl=new URL(req.url).origin+'/'+row.code;
+    const html=renderSocialPreview({title:meta.title||row.title||'',description:meta.description||'',image:meta.image||''},shortUrl,target);
+    return new Response(req.method==='HEAD'?null:html,{status:200,headers:{
+      'content-type':'text/html; charset=utf-8',
+      'cache-control':'no-store',
+      'x-content-type-options':'nosniff',
+      'vary':'User-Agent'
+    }});
+  }
   const classification=classifyRedirect(req);
   ctx.waitUntil((async()=>{
     try{
@@ -223,9 +262,9 @@ export default {
     try{
       const url=new URL(req.url),path=url.pathname;
       if(path==='/health')return json({status:'ok',db:!!env.DB});
-      if(path==='/robots.txt')return new Response('User-agent: *\nDisallow: /\n',{headers:{'content-type':'text/plain'}});
+      if(path==='/robots.txt')return new Response('User-agent: *\nDisallow: /admin\nDisallow: /api/\n',{headers:{'content-type':'text/plain; charset=utf-8'}});
       if(path==='/favicon.ico')return new Response('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#2563eb"/><path d="M22 22l-7 7a9 9 0 0 0 13 13l7-7m-6-6 7-7a9 9 0 0 1 13 13l-7 7" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round"/></svg>',{headers:{'content-type':'image/svg+xml'}});
-      if(path.startsWith('/api/'))return api(req,env,path);
+      if(path.startsWith('/api/'))return api(req,env,path,ctx);
       if(path==='/'||path==='/admin'){
         if(req.method!=='GET')return error('Método não permitido.',405);
         return new Response(dashboard,{headers:{'content-type':'text/html; charset=utf-8',...security}});
