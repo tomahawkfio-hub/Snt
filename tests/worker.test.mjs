@@ -63,30 +63,32 @@ test('modo rigoroso exige navegação visível iniciada pelo usuário',()=>{
   assert.equal(classifyRedirect(req('facebookexternalhit/1.1',human)),'automated_or_prefetch');
   assert.equal(classifyRedirect(req('Mozilla/5.0',human,'HEAD')),'other_method');
 });
-test('verificações e prévias redirecionam sem aumentar cliques',async()=>{
-  const link={id:'fcb7bd20-0a84-4d1d-93a9-24d7f3538e28',original_url:'https://example.com/noticia'};
+test('robôs recebem OG sem alterar contadores; verificações humanas sem interação redirecionam',async()=>{
+  const link={id:'fcb7bd20-0a84-4d1d-93a9-24d7f3538e28',code:'abc123',
+    original_url:'https://example.com/noticia',social_image:'https://example.com/photo.jpg',
+    social_title:'Título',social_description:'Descrição',social_fetched_at:'2026-11-22 20:00:00'};
   const statements=[],pending=[];
-  const env={
-    SESSION_SECRET:'test-secret-longer-than-thirty-two-bytes',
-    DB:{prepare:(sql)=>({bind:(...params)=>{
+  const env={SESSION_SECRET:'test-secret-longer-than-thirty-two-bytes',DB:{
+    prepare:(sql)=>({bind:(...params)=>{
       statements.push({sql,params});
       return {first:async()=>link,run:async()=>({meta:{changes:1}})};
-    }})}
-  };
+    }})
+  }};
   const ctx={waitUntil(p){pending.push(p);}};
-  const requests=[
+  for(const req of [
     new Request('https://snt.today/abc123',{method:'HEAD',headers:{'user-agent':'Mozilla/5.0'}}),
-    new Request('https://snt.today/abc123',{headers:{'user-agent':'facebookexternalhit/1.1'}}),
     new Request('https://snt.today/abc123',{headers:{'user-agent':'Mozilla/5.0 Chrome/120'}})
-  ];
-  for(const req of requests){
+  ]){
     const res=await worker.fetch(req,env,ctx);
     assert.equal(res.status,302);
-    assert.equal(res.headers.get('location'),'https://example.com/noticia');
   }
+  const bot=new Request('https://snt.today/abc123',{headers:{'user-agent':'facebookexternalhit/1.1'}});
+  const preview=await worker.fetch(bot,env,ctx);
+  assert.equal(preview.status,200);
+  assert.match(await preview.text(),/property="og:title"/);
   await Promise.all(pending);
   assert.equal(statements.filter(x=>x.sql.startsWith('INSERT INTO click_events')).length,0);
-  assert.equal(statements.filter(x=>x.sql.startsWith('INSERT INTO request_audit_daily')).length,3);
+  assert.equal(statements.filter(x=>x.sql.startsWith('INSERT INTO request_audit_daily')).length,2);
 });
 test('navegação acionada contabiliza uma vez; repetição não soma',async()=>{
   const row={id:'fcb7bd20-0a84-4d1d-93a9-24d7f3538e28',original_url:'https://example.com/noticia'};
