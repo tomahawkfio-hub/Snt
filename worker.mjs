@@ -1,5 +1,7 @@
 /** SNT Links — Cloudflare Workers / D1. No Lovable API or credentials. */
 import { dashboard } from './dashboard.mjs';
+import {validEmail,checkPassword,signMemberSession,verifyMemberSession} from './accounts.mjs';
+import {accountEndpoints} from './accounts-api.mjs';
 import { fetchSocialMetadata, isSocialCrawler, renderSocialPreview } from './preview.mjs';
 
 const COOKIE='snt_session';
@@ -132,25 +134,45 @@ async function saveSocialMetadata(db,id,destination){
   ).bind(meta.title,meta.description,meta.image,id,destination).run();
   return meta;
 }
+async function identifyActor(req,env){
+  if(await verifySession(req,env.SESSION_SECRET))return {id:'superadmin',role:'superadmin',name:'Superadministrador',active:true};
+  return verifyMemberSession(req,env);
+}
 async function api(req,env,path,ctx){
-  if(path==='/api/session'&&req.method==='GET')return json({authenticated:await verifySession(req,env.SESSION_SECRET)});
+  if(path==='/api/session'&&req.method==='GET'){
+    const a=await identifyActor(req,env);
+    return json(a?{authenticated:true,role:a.role,access:a.active,name:a.name||'',email:a.email||null,status:a.status||'active',plan_cents:a.plan_cents||null,paid_until:a.paid_until||null}:{authenticated:false});
+  }
   if(path==='/api/login'&&req.method==='POST'){
     if(!sameOrigin(req))return error('Origem não autorizada.',403);
-    if(!env.DB||!env.ADMIN_PASSWORD||!env.SESSION_SECRET)return error('Acesso administrativo ainda não configurado.',503);
+    if(!env.DB||!env.ADMIN_PASSWORD||!env.SESSION_SECRET)return error('Login não configurado.',503);
     const id=await bucket(req,env.SESSION_SECRET);
     const attempts=await env.DB.prepare('SELECT failures FROM login_attempts WHERE bucket=?').bind(id).first();
-    if((attempts?.failures||0)>=8)return error('Muitas tentativas. Tente novamente em até 10 minutos.',429);
+    if((attempts?.failures||0)>=8)return error('Muitas tentativas. Aguarde até dez minutos.',429);
     let body;try{body=await input(req);}catch{return error('Dados inválidos.');}
-    if(!await passwordMatches(body.password,env.ADMIN_PASSWORD)){
+    let token,role='superadmin',access=true;
+    if(body.email){
+      if(!validEmail(body.email))return error('E-mail ou senha incorretos.',401);
+      const account=await env.DB.prepare('SELECT id,email,display_name,password_salt,password_hash,session_version,status,paid_until FROM accounts WHERE email=?').bind(body.email.trim().toLowerCase()).first();
+      if(account&&await checkPassword(body.password,account)){
+        token=await signMemberSession(env.SESSION_SECRET,account);
+        role='member';
+        access=account.status==='active'&&!!account.paid_until&&account.paid_until>=new Date().toISOString().slice(0,10);
+      }
+    }else if(await passwordMatches(body.password,env.ADMIN_PASSWORD)){
+      token=await signSession(env.SESSION_SECRET);
+    }
+    if(!token){
       await env.DB.prepare('INSERT INTO login_attempts(bucket,failures) VALUES(?,1) ON CONFLICT(bucket) DO UPDATE SET failures=failures+1').bind(id).run();
-      return error('Senha incorreta.',401);
+      return error('E-mail ou senha incorretos.',401);
     }
     await env.DB.prepare('DELETE FROM login_attempts WHERE bucket=?').bind(id).run();
-    const response=json({ok:true});
-    response.headers.append('set-cookie',COOKIE+'='+await signSession(env.SESSION_SECRET)+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=28800');
+    const response=json({ok:true,role,access});
+    response.headers.append('set-cookie',COOKIE+'='+token+'; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=28800');
     return response;
   }
-  if(!await verifySession(req,env.SESSION_SECRET))return error('Faça login para continuar.',401);
+  const actor=await identifyActor(req,env);
+  if(!actor)return error('Faça login para continuar.',401);
   if(req.method!=='GET'&&!sameOrigin(req))return error('Origem não autorizada.',403);
   if(path==='/api/logout'&&req.method==='POST'){
     const response=json({ok:true});
@@ -158,13 +180,16 @@ async function api(req,env,path,ctx){
     return response;
   }
   if(!env.DB)return error('Banco de dados não configurado.',503);
+  const managed=await accountEndpoints(req,env,path,actor,{json,error,input});
+  if(managed)return managed;
+  if(!actor.active)return error('Sua assinatura está inativa ou vencida. Entre em contato com o administrador.',403);
   if(path==='/api/links'&&req.method==='GET'){
-    const r=await env.DB.prepare("SELECT id,code,original_url,COALESCE(NULLIF(title,''),social_title) AS title,social_image,interaction_clicks AS clicks,created_at FROM links WHERE disabled=0 ORDER BY created_at DESC LIMIT 150").all();
+    const r=await env.DB.prepare("SELECT id,code,original_url,COALESCE(NULLIF(title,''),social_title) AS title,social_image,interaction_clicks AS clicks,created_at FROM links WHERE owner_id=? AND disabled=0 ORDER BY created_at DESC LIMIT 150").bind(actor.id).all();
     // Ao abrir o painel, atualiza em segundo plano as notícias antigas sem prévia.
     // Não acessa o link curto e não interfere nos contadores.
     ctx.waitUntil((async()=>{
       try{
-        const missing=await env.DB.prepare("SELECT id,original_url FROM links WHERE disabled=0 AND social_fetched_at='' ORDER BY created_at DESC LIMIT 12").all();
+        const missing=await env.DB.prepare("SELECT id,original_url FROM links WHERE owner_id=? AND disabled=0 AND social_fetched_at='' ORDER BY created_at DESC LIMIT 12").bind(actor.id).all();
         await Promise.allSettled((missing.results||[]).map(x=>saveSocialMetadata(env.DB,x.id,x.original_url)));
       }catch(e){console.error(JSON.stringify({event:'social_backfill_error',error:String(e)}));}
     })());
@@ -179,7 +204,7 @@ async function api(req,env,path,ctx){
     const id=crypto.randomUUID();
     for(let i=0;i<(custom?1:8);i++){
       const code=custom||createCode();
-      const r=await env.DB.prepare('INSERT OR IGNORE INTO links(id,code,original_url,title) VALUES(?,?,?,?)').bind(id,code,dest,title).run();
+      const r=await env.DB.prepare('INSERT OR IGNORE INTO links(id,owner_id,code,original_url,title) VALUES(?,?,?,?,?)').bind(id,actor.id,code,dest,title).run();
       if(r.meta?.changes===1){
         // A criação não depende do tempo de resposta do site original.
         ctx.waitUntil(saveSocialMetadata(env.DB,id,dest).catch(e=>console.error(JSON.stringify({event:'social_metadata_error',error:String(e)}))));
@@ -190,22 +215,22 @@ async function api(req,env,path,ctx){
   }
   const refresh=path.match(/^\/api\/links\/([0-9a-f-]{36})\/refresh-preview$/i);
   if(refresh&&req.method==='POST'){
-    const row=await env.DB.prepare('SELECT id,original_url,code FROM links WHERE id=? AND disabled=0').bind(refresh[1]).first();
+    const row=await env.DB.prepare('SELECT id,original_url,code FROM links WHERE id=? AND owner_id=? AND disabled=0').bind(refresh[1],actor.id).first();
     if(!row)return error('Link não encontrado.',404);
     const meta=await saveSocialMetadata(env.DB,row.id,row.original_url);
     return json({preview:meta,shortUrl:new URL(req.url).origin+'/'+row.code,hasImage:!!meta.image});
   }
   const id=path.match(/^\/api\/links\/([0-9a-f-]{36})$/i);
   if(id&&req.method==='DELETE'){
-    const r=await env.DB.prepare('DELETE FROM links WHERE id=?').bind(id[1]).run();
+    const r=await env.DB.prepare('DELETE FROM links WHERE id=? AND owner_id=?').bind(id[1],actor.id).run();
     return r.meta?.changes?json({ok:true}):error('Link não encontrado.',404);
   }
   if(path==='/api/stats'&&req.method==='GET'){
     const [total,seven,countries,audit]=await Promise.all([
-      env.DB.prepare('SELECT COUNT(*) AS total_links, COALESCE(SUM(interaction_clicks),0) AS total_clicks FROM links WHERE disabled=0').first(),
-      env.DB.prepare("SELECT substr(clicked_at,1,10) AS day, COUNT(*) AS clicks, COUNT(DISTINCT visitor_hash) AS visitors FROM click_events WHERE qualified=2 AND clicked_at >= datetime('now','-6 days') GROUP BY substr(clicked_at,1,10) ORDER BY day ASC").all(),
-      env.DB.prepare('SELECT country,COUNT(*) AS clicks FROM click_events WHERE qualified=2 GROUP BY country ORDER BY clicks DESC LIMIT 5').all(),
-      env.DB.prepare("SELECT classification,SUM(attempts) AS attempts FROM request_audit_daily WHERE day >= date('now','-6 days') GROUP BY classification").all()
+      env.DB.prepare('SELECT COUNT(*) AS total_links, COALESCE(SUM(interaction_clicks),0) AS total_clicks FROM links WHERE owner_id=? AND disabled=0').bind(actor.id).first(),
+      env.DB.prepare("SELECT substr(clicked_at,1,10) AS day, COUNT(*) AS clicks, COUNT(DISTINCT visitor_hash) AS visitors FROM click_events e JOIN links l ON l.id=e.link_id WHERE l.owner_id=? AND e.qualified=2 AND e.clicked_at >= datetime('now','-6 days') GROUP BY substr(e.clicked_at,1,10) ORDER BY day ASC").bind(actor.id).all(),
+      env.DB.prepare('SELECT e.country,COUNT(*) AS clicks FROM click_events e JOIN links l ON l.id=e.link_id WHERE l.owner_id=? AND e.qualified=2 GROUP BY e.country ORDER BY clicks DESC LIMIT 5').bind(actor.id).all(),
+      env.DB.prepare("SELECT a.classification,SUM(a.attempts) AS attempts FROM request_audit_daily a JOIN links l ON l.id=a.link_id WHERE l.owner_id=? AND a.day >= date('now','-6 days') GROUP BY a.classification").bind(actor.id).all()
     ]);
     const today=new Date().toISOString().slice(0,10);
     const todayClicks=(seven.results||[]).find(x=>x.day===today)?.clicks||0;
@@ -215,7 +240,7 @@ async function api(req,env,path,ctx){
 }
 async function redirect(req,env,ctx,slug){
   if(!env.DB)return new Response('Serviço indisponível.',{status:503});
-  const row=await env.DB.prepare('SELECT id,code,title,original_url,social_title,social_description,social_image,social_fetched_at FROM links WHERE code=? AND disabled=0').bind(slug.toLowerCase()).first();
+  const row=await env.DB.prepare("SELECT l.id,l.code,l.title,l.original_url,l.social_title,l.social_description,l.social_image,l.social_fetched_at FROM links l LEFT JOIN accounts a ON a.id=l.owner_id WHERE l.code=? AND l.disabled=0 AND (l.owner_id='superadmin' OR (a.status='active' AND a.paid_until>=date('now')))").bind(slug.toLowerCase()).first();
   if(!row)return new Response('Link não encontrado.',{status:404});
   const target=validateDestination(row.original_url);
   if(!target)return new Response('Destino inválido.',{status:410});
