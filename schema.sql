@@ -1,6 +1,7 @@
 -- SNT Links — Cloudflare D1
 CREATE TABLE IF NOT EXISTS links (
   id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL DEFAULT 'superadmin',
   code TEXT NOT NULL UNIQUE COLLATE NOCASE,
   original_url TEXT NOT NULL,
   title TEXT NOT NULL DEFAULT '',
@@ -15,6 +16,7 @@ CREATE TABLE IF NOT EXISTS links (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_links_created ON links(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_links_owner_created ON links(owner_id,created_at DESC);
 
 CREATE TABLE IF NOT EXISTS click_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -50,3 +52,20 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_login_attempts_created ON login_attempts(created_at);
+
+-- Contas de assinantes: a conta principal permanece protegida por ADMIN_PASSWORD.
+CREATE TABLE IF NOT EXISTS accounts (
+ id TEXT PRIMARY KEY,
+ email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+ display_name TEXT NOT NULL,
+ password_salt TEXT NOT NULL,
+ password_hash TEXT NOT NULL,
+ role TEXT NOT NULL DEFAULT 'member' CHECK(role='member'),
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','active','suspended')),
+ plan_cents INTEGER NOT NULL DEFAULT 990 CHECK(plan_cents IN (990,1500)),
+ paid_until TEXT,
+ session_version INTEGER NOT NULL DEFAULT 1,
+ created_at TEXT NOT NULL DEFAULT (datetime('now')),
+ updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_accounts_status ON accounts(status,paid_until);
