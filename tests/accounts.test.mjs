@@ -24,8 +24,9 @@ test('senhas geradas não são compartilhadas nem guardadas em texto puro',async
   assert.ok(pwd.length>=20);
   const record=await makePasswordRecord(pwd);
   assert.ok(record.salt&&record.hash&&record.hash!==pwd);
-  assert.equal(await checkPassword(pwd,record),true);
-  assert.equal(await checkPassword('senha-incorreta-123456',record),false);
+  const stored={password_salt:record.salt,password_hash:record.hash};
+  assert.equal(await checkPassword(pwd,stored),true);
+  assert.equal(await checkPassword('senha-incorreta-123456',stored),false);
   assert.equal(validEmail('cliente@example.com'),true);
   assert.equal(validEmail('invalido'),false);
 });
