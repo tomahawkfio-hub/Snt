@@ -60,3 +60,4 @@ Outras solicitações continuam recebendo o redirecionamento normal, mas não au
 `npm test` executa os testes locais no Node.js 20+.
 
 **Avisos:** O repositório está público; não inclua credenciais ou chaves secretas. URLs HTTP(S) são validadas, mas políticas externas (inclusive Facebook/Meta) podem limitar redirecionamentos. Cloudflare pode cobrar ao exceder quotas gratuitas.
+<!-- Verificação pré-lançamento: suíte CI de isolamento, sessões, links e prévias sociais. -->
