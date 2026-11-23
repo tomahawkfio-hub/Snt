@@ -38,6 +38,17 @@ Outras solicitações continuam recebendo o redirecionamento normal, mas não au
 - **Limitações:** o site de destino precisa publicar a imagem e permitir a leitura de HTML pelo Worker. Se o Facebook já armazenou uma prévia antiga, é necessário abrir o [Depurador de Compartilhamento da Meta](https://developers.facebook.com/tools/debug/) e usar *Scrape Again* no URL curto. O Facebook controla a forma como o cartão final aparece; não há garantia de exibição.
 - Robôs de pré-visualização **não entram na contagem de cliques com interação**.
 
+## SNT Links como plataforma de assinaturas (22/11/2026)
+
+- A conta administrativa original permanece como **superadministrador** e continua usando a senha configurada em `ADMIN_PASSWORD`, sem e-mail obrigatório. Seus links existentes são preservados com `owner_id='superadmin'`.
+- O superadministrador acessa a seção **Assinantes**, cria contas com nome, e-mail e senha provisória única, e pode ativar, suspender, renovar por 30 dias, escolher plano e redefinir senha.
+- Cada assinante usa seu **próprio e-mail e sua própria senha**, armazenada com sal aleatório e PBKDF2-SHA256. O assinante pode alterar a senha.
+- Links, metadados, exclusões e estatísticas são isolados por `links.owner_id`. Links antigos pertencem apenas ao superadministrador. Endereços curtos continuam globalmente únicos.
+- Planos sugeridos: **R$ 9,90/mês** ou **R$ 15,00/mês**. **Cobrança, conciliação, emissão fiscal e renovação automática ainda não estão integradas**. A ativação da assinatura depende da confirmação **manual** pelo superadministrador; não são emitidas cobranças automáticas.
+- Assinaturas pendentes, suspensas ou vencidas não podem criar ou gerenciar links; seus links deixam de redirecionar até a reativação. A cobrança e o aviso de vencimento exigem uma integração de pagamento posteriormente.
+- A migração de bancos existentes é `migrations/20261122_multi_tenant.sql`. Ela cria `accounts`, acrescenta `owner_id` e mantém os links históricos na conta principal.
+- A criação de contas **não é pública**: o superadministrador entrega a senha provisória ao cliente por um canal privado. Recomenda-se validar custos, privacidade/LGPD, termos de uso e proteção contra links abusivos antes de divulgar a plataforma comercialmente.
+
 ## Instalação
 
 1. Criar banco D1 e executar `schema.sql`.
