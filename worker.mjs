@@ -141,7 +141,7 @@ async function identifyActor(req,env){
 async function api(req,env,path,ctx){
   if(path==='/api/session'&&req.method==='GET'){
     const a=await identifyActor(req,env);
-    return json(a?{authenticated:true,role:a.role,access:a.active,name:a.name||'',email:a.email||null,status:a.status||'active',plan_cents:a.plan_cents||null,paid_until:a.paid_until||null}:{authenticated:false});
+    return json(a?{authenticated:true,role:a.role,access:a.active,name:a.name||'',email:a.email||null,status:a.status||'active',plan_cents:a.plan_cents||null,paid_until:a.paid_until||null,must_change_password:!!a.must_change_password}:{authenticated:false});
   }
   if(path==='/api/login'&&req.method==='POST'){
     if(!sameOrigin(req))return error('Origem não autorizada.',403);
@@ -153,7 +153,7 @@ async function api(req,env,path,ctx){
     let token,role='superadmin',access=true;
     if(body.email){
       if(!validEmail(body.email))return error('E-mail ou senha incorretos.',401);
-      const account=await env.DB.prepare('SELECT id,email,display_name,password_salt,password_hash,session_version,status,paid_until FROM accounts WHERE email=?').bind(body.email.trim().toLowerCase()).first();
+      const account=await env.DB.prepare('SELECT id,email,display_name,password_salt,password_hash,session_version,status,paid_until,must_change_password FROM accounts WHERE email=?').bind(body.email.trim().toLowerCase()).first();
       if(account&&await checkPassword(body.password,account)){
         token=await signMemberSession(env.SESSION_SECRET,account);
         role='member';
@@ -182,6 +182,7 @@ async function api(req,env,path,ctx){
   if(!env.DB)return error('Banco de dados não configurado.',503);
   const managed=await accountEndpoints(req,env,path,actor,{json,error,input});
   if(managed)return managed;
+  if(actor.must_change_password)return error('Defina uma senha pessoal antes de acessar o painel.',403);
   if(!actor.active)return error('Sua assinatura está inativa ou vencida. Entre em contato com o administrador.',403);
   if(path==='/api/links'&&req.method==='GET'){
     const r=await env.DB.prepare("SELECT id,code,original_url,COALESCE(NULLIF(title,''),social_title) AS title,social_image,interaction_clicks AS clicks,created_at FROM links WHERE owner_id=? AND disabled=0 ORDER BY created_at DESC LIMIT 150").bind(actor.id).all();
