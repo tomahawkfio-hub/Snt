@@ -81,3 +81,79 @@ test('root continua usando cookie antigo e recebe papel de superadmin',async()=>
   assert.equal(res.status,200);
   const data=await res.json();assert.equal(data.role,'superadmin');assert.equal(data.authenticated,true);
 });
+
+test('primeiro login exige senha pessoal e rejeita a antiga após a troca',async()=>{
+  const oldPassword='TesteProvisorio@123456',newPassword='MinhaSenhaPrivada@9876';
+  const record=await makePasswordRecord(oldPassword);
+  const user={...account(),password_salt:record.salt,password_hash:record.hash,must_change_password:1};
+  const queries=[],ctx={waitUntil(p){pending.push(p);}},pending=[];
+  const env={ADMIN_PASSWORD:'senha superadmin não usada aqui',SESSION_SECRET:secret,DB:{
+    prepare(sql){return {bind:(...params)=>{
+      queries.push({sql,params});
+      return {
+        first:async()=>{
+          if(sql.includes('FROM accounts WHERE id=?')||sql.includes('FROM accounts WHERE email=?'))return user;
+          if(sql.startsWith('SELECT password_salt'))return user;
+          if(sql.startsWith('SELECT failures FROM login_attempts'))return null;
+          if(sql.startsWith('SELECT COUNT(*)'))return {total_links:0,total_clicks:0};
+          return null;
+        },
+        all:async()=>({results:[]}),
+        run:async()=>{
+          if(sql.startsWith('UPDATE accounts SET password_salt')){
+            user.password_salt=params[0];user.password_hash=params[1];
+            user.must_change_password=0;user.session_version++;
+          }
+          return {meta:{changes:1}};
+        }
+      };
+    }};}
+  }};
+  const token=await signMemberSession(secret,user);
+  const before=await worker.fetch(memberReq('/api/session',token),env,ctx);
+  assert.equal((await before.json()).must_change_password,true);
+  const locked=await worker.fetch(memberReq('/api/links',token),env,ctx);
+  assert.equal(locked.status,403,'provisória não permite listar links');
+  assert.match((await locked.json()).error,/senha pessoal/);
+  const updated=await worker.fetch(memberReq('/api/account/password',token,{
+    method:'POST',
+    headers:{origin:'https://snt.today','content-type':'application/json'},
+    body:JSON.stringify({currentPassword:oldPassword,newPassword})
+  }),env,ctx);
+  assert.equal(updated.status,200);
+  assert.equal(user.must_change_password,0);
+  assert.equal(user.session_version,2);
+  assert.equal(await checkPassword(newPassword,user),true);
+  assert.equal(await checkPassword(oldPassword,user),false);
+  assert.equal((await worker.fetch(memberReq('/api/session',token),env,ctx)).json().then(x=>x.authenticated),false);
+  const login=async password=>worker.fetch(new Request('https://snt.today/api/login',{
+    method:'POST',headers:{origin:'https://snt.today','content-type':'application/json','user-agent':'QA'},
+    body:JSON.stringify({email:user.email,password})
+  }),env,ctx);
+  const old=await login(oldPassword);assert.equal(old.status,401);
+  const current=await login(newPassword);assert.equal(current.status,200);
+  const updatedCookie=current.headers.get('set-cookie').split(';')[0];
+  const good=await worker.fetch(new Request('https://snt.today/api/session',{headers:{cookie:updatedCookie}}),env,ctx);
+  assert.equal((await good.json()).must_change_password,false);
+  const accessible=await worker.fetch(new Request('https://snt.today/api/links',{headers:{cookie:updatedCookie}}),env,ctx);
+  assert.equal(accessible.status,200);
+  await Promise.all(pending);
+});
+test('criação e redefinição pelo superadmin obrigam senha pessoal',async()=>{
+  const captured=[];
+  const createdId='5127b319-6b8c-4375-9f1b-1b4b7f511106';
+  const env={DB:{prepare(sql){return {bind:(...params)=>{
+    captured.push({sql,params});
+    return {run:async()=>({meta:{changes:1}}),first:async()=>({id:createdId,email:'teste@example.com'})};
+  }};}}};
+  const render={json:(x,status=200)=>Response.json(x,{status}),error:(message,status=400)=>Response.json({error:message},{status}),input:async(req)=>req.json()};
+  const request=(path,body)=>new Request('https://snt.today'+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  const created=await accountEndpoints(request('/api/admin/accounts',{email:'teste@example.com',name:'Conta Teste',plan_cents:990,status:'active'}),env,'/api/admin/accounts',{role:'superadmin'},render);
+  assert.equal(created.status,201);
+  const createBody=await created.json();
+  assert.ok(createBody.temporary_password.length>=20);
+  assert.ok(captured.some(x=>x.sql.includes('INSERT INTO accounts')&&x.sql.includes('must_change_password')&&x.sql.includes('1)')));
+  const reset=await accountEndpoints(request('/api/admin/accounts/'+createdId+'/reset-password',{}),env,'/api/admin/accounts/'+createdId+'/reset-password',{role:'superadmin'},render);
+  assert.equal(reset.status,200);
+  assert.ok(captured.some(x=>x.sql.startsWith('UPDATE accounts')&&x.sql.includes('must_change_password=1')));
+});
