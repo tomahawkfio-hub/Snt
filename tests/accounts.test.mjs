@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {generatePassword,makePasswordRecord,checkPassword,signMemberSession,verifyMemberSession,validEmail} from '../accounts.mjs';
+import {PASSWORD_PBKDF2_ITERATIONS,generatePassword,makePasswordRecord,checkPassword,signMemberSession,verifyMemberSession,validEmail} from '../accounts.mjs';
 import {accountEndpoints} from '../accounts-api.mjs';
 import worker,{__test} from '../worker.mjs';
 
@@ -19,6 +19,7 @@ async function memberEnv(status='active'){
   }}};
 }
 function memberReq(path,token,opts={}){return new Request('https://snt.today'+path,{...opts,headers:{cookie:'snt_session='+token,...opts.headers}});}
+test('limite de PBKDF2 é compatível com Cloudflare Workers',()=>{assert.ok(PASSWORD_PBKDF2_ITERATIONS<=100000);assert.ok(PASSWORD_PBKDF2_ITERATIONS>=100000);});
 test('senhas geradas não são compartilhadas nem guardadas em texto puro',async()=>{
   const pwd=generatePassword();
   assert.ok(pwd.length>=20);
