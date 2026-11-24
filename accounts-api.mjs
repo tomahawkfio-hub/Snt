@@ -11,15 +11,16 @@ export async function accountEndpoints(req,env,path,actor,{json,error,input}){
     let data;try{data=await input(req);}catch{return error('Dados inválidos.');}
     if(!strongPassword(data.newPassword))return error('A senha nova precisa de pelo menos 12 caracteres.');
     const record=await env.DB.prepare('SELECT password_salt,password_hash FROM accounts WHERE id=?').bind(actor.id).first();
-    if(!await checkPassword(data.currentPassword,record))return error('Senha atual incorreta.',403);
+    if(!await checkPassword(data.currentPassword,record))return error('Senha temporária ou atual incorreta.',403);
+    if(await checkPassword(data.newPassword,record))return error('Escolha uma senha diferente da anterior.');
     const fresh=await makePasswordRecord(data.newPassword);
-    await env.DB.prepare("UPDATE accounts SET password_salt=?,password_hash=?,session_version=session_version+1,updated_at=datetime('now') WHERE id=?").bind(fresh.salt,fresh.hash,actor.id).run();
+    await env.DB.prepare("UPDATE accounts SET password_salt=?,password_hash=?,must_change_password=0,session_version=session_version+1,updated_at=datetime('now') WHERE id=?").bind(fresh.salt,fresh.hash,actor.id).run();
     const response=json({ok:true,login_required:true});cookieClear(response);return response;
   }
   if(!path.startsWith('/api/admin/'))return null;
   if(actor.role!=='superadmin')return error('Acesso exclusivo do superadministrador.',403);
   if(path==='/api/admin/accounts'&&req.method==='GET'){
-    const r=await env.DB.prepare("SELECT a.id,a.email,a.display_name,a.status,a.plan_cents,a.paid_until,a.created_at,(SELECT COUNT(*) FROM links l WHERE l.owner_id=a.id AND l.disabled=0) AS links,(SELECT COALESCE(SUM(interaction_clicks),0) FROM links l WHERE l.owner_id=a.id AND l.disabled=0) AS clicks FROM accounts a ORDER BY a.created_at DESC LIMIT 200").all();
+    const r=await env.DB.prepare("SELECT a.id,a.email,a.display_name,a.status,a.plan_cents,a.paid_until,a.must_change_password,a.created_at,(SELECT COUNT(*) FROM links l WHERE l.owner_id=a.id AND l.disabled=0) AS links,(SELECT COALESCE(SUM(interaction_clicks),0) FROM links l WHERE l.owner_id=a.id AND l.disabled=0) AS clicks FROM accounts a ORDER BY a.created_at DESC LIMIT 200").all();
     return json({accounts:r.results||[],pricing:[990,1500],billing:'manual'});
   }
   if(path==='/api/admin/accounts'&&req.method==='POST'){
@@ -30,7 +31,7 @@ export async function accountEndpoints(req,env,path,actor,{json,error,input}){
     if(status==='active'&&due<new Date().toISOString().slice(0,10))return error('A validade não pode estar no passado.');
     const password=generatePassword(),secrets=await makePasswordRecord(password),id=crypto.randomUUID();
     try{
-      await env.DB.prepare("INSERT INTO accounts(id,email,display_name,password_salt,password_hash,role,status,plan_cents,paid_until) VALUES(?,?,?,?,?,'member',?,?,?)")
+      await env.DB.prepare("INSERT INTO accounts(id,email,display_name,password_salt,password_hash,role,status,plan_cents,paid_until,must_change_password) VALUES(?,?,?,?,?,'member',?,?,?,1)")
         .bind(id,d.email.trim().toLowerCase(),d.name.trim(),secrets.salt,secrets.hash,status,Number(d.plan_cents),due).run();
     }catch(e){
       if(/UNIQUE|constraint/i.test(String(e)))return error('Este e-mail já está cadastrado.',409);
@@ -43,7 +44,7 @@ export async function accountEndpoints(req,env,path,actor,{json,error,input}){
     const user=await env.DB.prepare('SELECT id,email FROM accounts WHERE id=?').bind(match[1]).first();
     if(!user)return error('Conta não encontrada.',404);
     const password=generatePassword(),record=await makePasswordRecord(password);
-    await env.DB.prepare("UPDATE accounts SET password_salt=?,password_hash=?,session_version=session_version+1,updated_at=datetime('now') WHERE id=?").bind(record.salt,record.hash,user.id).run();
+    await env.DB.prepare("UPDATE accounts SET password_salt=?,password_hash=?,must_change_password=1,session_version=session_version+1,updated_at=datetime('now') WHERE id=?").bind(record.salt,record.hash,user.id).run();
     return json({ok:true,email:user.email,temporary_password:password});
   }
   if(match&&!match[2]&&req.method==='PATCH'){
