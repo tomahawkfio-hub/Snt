@@ -125,7 +125,8 @@ test('primeiro login exige senha pessoal e rejeita a antiga após a troca',async
   assert.equal(user.session_version,2);
   assert.equal(await checkPassword(newPassword,user),true);
   assert.equal(await checkPassword(oldPassword,user),false);
-  assert.equal((await worker.fetch(memberReq('/api/session',token),env,ctx)).json().then(x=>x.authenticated),false);
+  const expiredSession=await worker.fetch(memberReq('/api/session',token),env,ctx);
+  assert.equal((await expiredSession.json()).authenticated,false);
   const login=async password=>worker.fetch(new Request('https://snt.today/api/login',{
     method:'POST',headers:{origin:'https://snt.today','content-type':'application/json','user-agent':'QA'},
     body:JSON.stringify({email:user.email,password})
