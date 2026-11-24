@@ -1,6 +1,8 @@
 /** SNT Links: contas individuais, sessão HMAC e senha PBKDF2. */
 const utf8=new TextEncoder();
-const ITERATIONS=165000;
+// Cloudflare Workers WebCrypto rejects PBKDF2 iteration counts above 100000.
+export const PASSWORD_PBKDF2_ITERATIONS=100000;
+const ITERATIONS=PASSWORD_PBKDF2_ITERATIONS;
 function encode(bytes){return btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
 function decode(s){const a=s.replace(/-/g,'+').replace(/_/g,'/');return Uint8Array.from(atob(a+'='.repeat((4-a.length%4)%4)),x=>x.charCodeAt(0));}
 async function hmac(secret,body){
