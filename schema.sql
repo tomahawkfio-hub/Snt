@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS accounts (
  plan_cents INTEGER NOT NULL DEFAULT 990 CHECK(plan_cents IN (990,1500)),
  paid_until TEXT,
  session_version INTEGER NOT NULL DEFAULT 1,
+ must_change_password INTEGER NOT NULL DEFAULT 0 CHECK(must_change_password IN (0,1)),
  created_at TEXT NOT NULL DEFAULT (datetime('now')),
  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );

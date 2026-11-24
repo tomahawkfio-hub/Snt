@@ -48,9 +48,9 @@ export async function verifyMemberSession(req,env){
     if(expected.length!==supplied.length)return null;
     let mismatch=0;for(let i=0;i<expected.length;i++)mismatch|=expected.charCodeAt(i)^supplied.charCodeAt(i);
     if(mismatch!==0)return null;
-    const u=await env.DB.prepare('SELECT id,email,display_name,role,status,plan_cents,paid_until,session_version FROM accounts WHERE id=?').bind(parts[1]).first();
+    const u=await env.DB.prepare('SELECT id,email,display_name,role,status,plan_cents,paid_until,session_version,must_change_password FROM accounts WHERE id=?').bind(parts[1]).first();
     if(!u||u.role!=='member'||Number(u.session_version)!==Number(parts[2]))return null;
-    return {id:u.id,role:'member',name:u.display_name,email:u.email,status:u.status,plan_cents:u.plan_cents,paid_until:u.paid_until,active:u.status==='active'&&!!u.paid_until&&u.paid_until>=new Date().toISOString().slice(0,10)};
+    return {id:u.id,role:'member',name:u.display_name,email:u.email,status:u.status,plan_cents:u.plan_cents,paid_until:u.paid_until,must_change_password:!!u.must_change_password,active:u.status==='active'&&!!u.paid_until&&u.paid_until>=new Date().toISOString().slice(0,10)};
   }catch{return null;}
 }
 export const LOGIN_COOKIE='snt_session';
