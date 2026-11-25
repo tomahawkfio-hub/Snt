@@ -74,3 +74,11 @@ Outras solicitações continuam recebendo o redirecionamento normal, mas não au
 - A rota `GET /api/demo/days` retorna esses dois dias apenas para a conta superadmin; a data usa horário de Brasília. Assinantes recebem 403.
 - A interface mostra os valores em cards próprios com o título **Exemplo de histórico de visualizações — DADOS FICTÍCIOS**; não inclui esses números nos indicadores de cliques reais, no gráfico real, na lista de links ou na cobrança.
 - O histórico permanece preservado no banco; após a virada do dia, os rótulos “hoje” e “ontem” acompanham o calendário e não reutilizam valores passados como sendo de dias novos.
+
+### Prévia temporária na visão geral do superadmin (25/11/2026)
+
+- **Reversão rápida:** em `dashboard.mjs`, definir `ADMIN_PRESENTATION_PREVIEW=false` e publicar a versão para restaurar todos os indicadores e gráficos verdadeiros, sem qualquer migração. O modo só atua quando `role='superadmin'`.
+- **Dados ilustrativos na visão geral:** em 25/11/2026, os cards mostram 87 visualizações de exemplo, 37.598 no dia 24/11/2026 e 37.685 no total dos dois dias; o gráfico utiliza os mesmos valores. A seção traz identificação discreta de dados de exemplo, para não representar dados inventados como visitas verificadas.
+- **Consulta isolada:** `GET /api/demo/days?on=2026-11-25` retorna totais dos dois dias e por link. A origem é apenas `demo_daily_views`; `links.interaction_clicks` e `click_events` permanecem inteiramente intactos. Os 12 links existentes preservam seu histórico real.
+- **Assinantes:** não recebem essa prévia nem acessam os endpoints demonstrativos (403). Para eles, cards, gráfico e lista continuam com acessos qualificados efetivamente medidos.
+- **Após reversão:** mantenha `demo_daily_views` como arquivo de teste se desejado, ou remova em operação administrativa separada; não é necessário reimportar cliques.

@@ -41,7 +41,7 @@ test('relatório busca dias completos em Brasília e preserva cliques acumulados
 test('o painel monta os últimos sete dias a partir da data do servidor brasileiro',()=>{
   assert.match(dashboard,/Interações hoje \(Brasília\)/);
   assert.match(dashboard,/Últimos 7 dias • horário de Brasília/);
-  assert.match(dashboard,/const brazilToday=/);
+  assert.match(dashboard,/const reference=/);
   assert.match(dashboard,/setInterval\(refreshStatsIfNeeded,60_000\)/);
   assert.match(dashboard,/visibilitychange/);
 });

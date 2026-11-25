@@ -192,21 +192,29 @@ async function api(req,env,path,ctx){
   if(path==='/api/demo/days'&&req.method==='GET'){
     // Cenários fictícios jamais entram em contadores reais e são privados ao superadmin.
     if(actor.role!=='superadmin')return error('Acesso exclusivo do superadministrador.',403);
-    const today=brasiliaDay();
+    const reference=new URL(req.url).searchParams.get('on');
+    const today=reference&&/^\d{4}-\d{2}-\d{2}$/.test(reference)&&!Number.isNaN(Date.parse(reference+'T12:00:00Z'))?reference:brasiliaDay();
     const before=new Date(today+'T12:00:00Z');
     before.setUTCDate(before.getUTCDate()-1);
     const yesterday=before.toISOString().slice(0,10);
-    const result=await env.DB.prepare(
-      "SELECT d.day,SUM(d.views) AS views FROM demo_daily_views d "+
-      "JOIN links l ON l.id=d.link_id WHERE d.owner_id=? AND l.owner_id=? "+
-      "AND d.day IN (?,?) AND l.disabled=0 GROUP BY d.day ORDER BY d.day DESC"
-    ).bind(actor.id,actor.id,today,yesterday).all();
+    const [result,perLink]=await Promise.all([
+      env.DB.prepare(
+        "SELECT d.day,SUM(d.views) AS views FROM demo_daily_views d "+
+        "JOIN links l ON l.id=d.link_id WHERE d.owner_id=? AND l.owner_id=? "+
+        "AND d.day IN (?,?) AND l.disabled=0 GROUP BY d.day ORDER BY d.day DESC"
+      ).bind(actor.id,actor.id,today,yesterday).all(),
+      env.DB.prepare(
+        "SELECT l.code,SUM(d.views) AS views FROM demo_daily_views d "+
+        "JOIN links l ON l.id=d.link_id WHERE d.owner_id=? AND l.owner_id=? "+
+        "AND d.day IN (?,?) AND l.disabled=0 GROUP BY l.code ORDER BY views DESC"
+      ).bind(actor.id,actor.id,today,yesterday).all()
+    ]);
     const daily=Object.fromEntries((result.results||[]).map(row=>[row.day,Number(row.views||0)]));
     return json({type:'simulation',label:'CENÁRIO DEMONSTRATIVO — DADOS FICTÍCIOS',
       timezone:'America/Sao_Paulo',days:[
         {day:today,period:'hoje',views:daily[today]||0},
         {day:yesterday,period:'ontem',views:daily[yesterday]||0}
-      ]});
+      ],links:(perLink.results||[]).map(x=>({code:x.code,views:Number(x.views||0)}))});
   }
   if(path==='/api/demo'&&req.method==='GET'){
     // Apenas superadmin; dados simulados nunca entram em cliques reais.
