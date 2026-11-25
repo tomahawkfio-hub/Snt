@@ -13,7 +13,7 @@ test('somente superadmin vê dados fictícios separados do painel real',async()=
   const DB={prepare(sql){
     return {bind:(...params)=>{
       queries.push({sql,params});
-      return {all:async()=>({results:sql.includes('demo_daily_views')?demoLinks:[]}),first:async()=>({total_links:12,total_clicks:168})};
+      return {all:async()=>({results:sql.includes('demo_daily_views')?demoLinks:[]}),first:async()=>sql.includes('MAX(day)')?{day:'2026-11-24'}:{total_links:12,total_clicks:168}};
     }};
   }};
   const get=path=>worker.fetch(new Request('https://snt.today'+path,{headers:{cookie:'snt_session='+session}}),{SESSION_SECRET:secret,DB},{waitUntil(){}});
@@ -24,7 +24,8 @@ test('somente superadmin vê dados fictícios separados do painel real',async()=
   assert.match(demo.label,/FICTÍCIOS/);
   assert.equal(demo.total,37598);
   assert.equal(demo.links.length,2);
-  assert.equal(demo.day,__test.brasiliaDay());
+  assert.equal(demo.day,'2026-11-24');
+  assert.ok(queries.some(x=>x.sql.includes('MAX(day)')&&x.params[0]==='superadmin'));
   assert.ok(queries.some(x=>x.sql.includes('demo_daily_views')&&x.sql.includes('l.owner_id=?')&&x.params[0]==='superadmin'&&x.params[1]==='superadmin'));
   const real=await get('/api/stats');
   assert.equal(real.status,200);
