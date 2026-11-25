@@ -102,13 +102,26 @@ test('assinante não consulta histórico fictício do superadmin',async()=>{
   assert.equal(response.status,403);
   assert.equal(touchedDemo,false);
 });
-test('dashboard preserva estatísticas reais e mostra datas fictícias separadas',()=>{
-  assert.match(dashboard,/id="demoDailyHistory"/);
-  assert.match(dashboard,/Exemplo de histórico de visualizações/);
-  assert.match(dashboard,/DADOS FICTÍCIOS/);
-  assert.match(dashboard,/id="demoTodayViews"/);
-  assert.match(dashboard,/id="demoYesterdayViews"/);
-  assert.match(dashboard,/state\.role==='superadmin'\?api\('\/api\/demo\/days'\)/);
-  assert.match(dashboard,/\$\('totalClicks'\)\.textContent=number\(a\.total_clicks\)/);
-  assert.match(dashboard,/\$\('todayClicks'\)\.textContent=number\(a\.today_clicks\)/);
+
+test('superadmin recebe a prévia no dashboard principal, com identificação visível e reversão',()=>{
+  assert.match(dashboard,/const ADMIN_PRESENTATION_PREVIEW=true/);
+  assert.match(dashboard,/const PRESENTATION_REFERENCE_DATE='2026-11-25'/);
+  assert.match(dashboard,/id="presentationNotice"/);
+  assert.match(dashboard,/dados de exemplo dos dias 24 e 25\/11\/2026/);
+  assert.match(dashboard,/id="previewYesterdayCount"/);
+  assert.match(dashboard,/id="totalClicks"/);
+  assert.match(dashboard,/id="todayClicks"/);
+  assert.match(dashboard,/preview\.today\+preview\.yesterday/);
+  assert.match(dashboard,/number\(preview\?preview\.today:totals\.today_clicks\)/);
+  assert.match(dashboard,/number\(preview\?preview\.today\+preview\.yesterday:totals\.total_clicks\)/);
+  assert.match(dashboard,/state\.role!=='superadmin'/);
+  assert.match(dashboard,/visualizações de exemplo/);
+  assert.doesNotMatch(dashboard,/id="demoDailyHistory"/);
+});
+test('contadores reais continuam acessíveis sem o modo de apresentação',()=>{
+  assert.match(dashboard,/if\(!ADMIN_PRESENTATION_PREVIEW\|\|state\.role!=='superadmin'/);
+  assert.match(dashboard,/totals\.total_clicks/);
+  assert.match(dashboard,/totals\.today_clicks/);
+  assert.match(dashboard,/data=preview\?days\.map/);
+  assert.match(dashboard,/state\.role==='superadmin'\?api\('\/api\/demo\/days\?on='\+PRESENTATION_REFERENCE_DATE\)/);
 });
