@@ -47,15 +47,20 @@ test('conta comum não consulta demonstração de superadmin',async()=>{
   assert.equal(response.status,403);
   assert.equal(attemptedDemoQuery,false);
 });
-test('dashboard principal apresenta demonstracao sem botao, rotulada e apenas na conta principal',()=>{
-  assert.doesNotMatch(dashboard,/id="demoModeWarning"/);
-  assert.match(dashboard,/Visualizações simuladas/);
-  assert.match(dashboard,/visualizações FICTÍCIAS/);
-  assert.match(dashboard,/interações reais/);
-  assert.match(dashboard,/state\.demoMode=identity\.role==='superadmin'/);
-  assert.match(dashboard,/state\.role==='superadmin'&&state\.demoMode/);
-  assert.match(dashboard,/state\.role==='superadmin'\?api\('\/api\/demo'\)/);
+test('dashboard principal usa somente valores reais, independentemente da conta',()=>{
+  assert.match(dashboard,/\$\('totalClicks'\)\.textContent=number\(a\.total_clicks\)/);
+  assert.match(dashboard,/\$\('todayClicks'\)\.textContent=number\(a\.today_clicks\)/);
+  assert.match(dashboard,/const data=days\.map\(day=>Number\(\(stats\.days\|\|\[\]\)\.find/);
+  assert.match(dashboard,/number\(x\.clicks\)\+' cliques qualificados'/);
+  assert.doesNotMatch(dashboard,/demoByCode/);
+  assert.doesNotMatch(dashboard,/state\.demoMode/);
   assert.doesNotMatch(dashboard,/id="demoModeButton"/);
   assert.doesNotMatch(dashboard,/id="demoArea"/);
-  assert.match(dashboard,/const shown=simulated\?Number\(state\.demo\.total\):Number\(a\.total_clicks\|\|0\)/);
+});
+test('37.598 fictícios ficam preservados só como arquivo do superadmin',()=>{
+  assert.match(dashboard,/id="demoArchiveNotice"/);
+  assert.match(dashboard,/Cenário de demonstração arquivado:/);
+  assert.match(dashboard,/não entram nos contadores reais/);
+  assert.match(dashboard,/if\(state\.role!=='superadmin'/);
+  assert.match(dashboard,/state\.role==='superadmin'\?api\('\/api\/demo'\)/);
 });
