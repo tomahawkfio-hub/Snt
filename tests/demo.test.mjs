@@ -50,7 +50,7 @@ test('conta comum não consulta demonstração de superadmin',async()=>{
 test('interface deixa rótulos de simulação visíveis e não troca os reais',()=>{
   assert.match(dashboard,/DADOS FICTÍCIOS/);
   assert.match(dashboard,/Simulação de visualizações/);
-  assert.match(dashboard,/FICTÍCIO:/);
+  assert.match(dashboard,/visualizações FICTÍCIAS/);
   assert.match(dashboard,/interações reais/);
 });
 
