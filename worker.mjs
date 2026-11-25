@@ -192,7 +192,9 @@ async function api(req,env,path,ctx){
   if(path==='/api/demo'&&req.method==='GET'){
     // Apenas superadmin; dados simulados nunca entram em cliques reais.
     if(actor.role!=='superadmin')return error('Esta demonstração está disponível somente ao superadministrador.',403);
-    const day=brasiliaDay();
+    const today=brasiliaDay();
+    const latest=await env.DB.prepare('SELECT MAX(day) AS day FROM demo_daily_views WHERE owner_id=? AND day<=?').bind(actor.id,today).first();
+    const day=latest?.day||today;
     const result=await env.DB.prepare(
       "SELECT l.code,d.views FROM demo_daily_views d "+
       "JOIN links l ON l.id=d.link_id "+
