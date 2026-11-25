@@ -48,7 +48,7 @@ test('conta comum não consulta demonstração de superadmin',async()=>{
   assert.equal(attemptedDemoQuery,false);
 });
 test('dashboard principal apresenta demonstracao sem botao, rotulada e apenas na conta principal',()=>{
-  assert.match(dashboard,/MODO DEMONSTRAÇÃO — DADOS FICTÍCIOS/);
+  assert.doesNotMatch(dashboard,/id="demoModeWarning"/);
   assert.match(dashboard,/Visualizações simuladas/);
   assert.match(dashboard,/visualizações FICTÍCIAS/);
   assert.match(dashboard,/interações reais/);
