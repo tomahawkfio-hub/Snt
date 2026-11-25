@@ -53,3 +53,15 @@ test('interface deixa rótulos de simulação visíveis e não troca os reais',(
   assert.match(dashboard,/FICTÍCIO:/);
   assert.match(dashboard,/interações reais/);
 });
+
+test('alternância da visualização fictícia somente no superadmin e com aviso visível',()=>{
+  assert.match(dashboard,/id="demoSwitcher"/);
+  assert.match(dashboard,/id="demoModeWarning"/);
+  assert.match(dashboard,/MODO DEMONSTRAÇÃO — DADOS FICTÍCIOS/);
+  assert.match(dashboard,/identity.role!=='superadmin'/);
+  assert.match(dashboard,/state.role==='superadmin'&&state.demoMode/);
+  assert.match(dashboard,/Voltar aos dados reais/);
+  assert.match(dashboard,/Visualizações simuladas/);
+  assert.match(dashboard,/renderStats\(state.realStats\)/);
+  assert.match(dashboard,/Dados reais dos cliques/);
+});
