@@ -123,6 +123,11 @@ function classifyRedirect(req){
 async function bucket(req,secret){
   return b64(await mac(secret,'login:'+Math.floor(Date.now()/600000)+':'+(req.headers.get('cf-connecting-ip')||'unknown'))).slice(0,32);
 }
+// D1 armazena eventos em UTC; os relatórios do público brasileiro usam UTC-3.
+const BRAZIL_TIME_ZONE='America/Sao_Paulo';
+function brasiliaDay(now=new Date()){
+  return new Date(now.getTime()-3*3600_000).toISOString().slice(0,10);
+}
 async function visitorHash(req,secret){
   return b64(await mac(secret,new Date().toISOString().slice(0,10)+'|'+(req.headers.get('cf-connecting-ip')||'')+'|'+(req.headers.get('user-agent')||'').slice(0,200))).slice(0,32);
 }
@@ -229,13 +234,13 @@ async function api(req,env,path,ctx){
   if(path==='/api/stats'&&req.method==='GET'){
     const [total,seven,countries,audit]=await Promise.all([
       env.DB.prepare('SELECT COUNT(*) AS total_links, COALESCE(SUM(interaction_clicks),0) AS total_clicks FROM links WHERE owner_id=? AND disabled=0').bind(actor.id).first(),
-      env.DB.prepare("SELECT substr(clicked_at,1,10) AS day, COUNT(*) AS clicks, COUNT(DISTINCT visitor_hash) AS visitors FROM click_events e JOIN links l ON l.id=e.link_id WHERE l.owner_id=? AND e.qualified=2 AND e.clicked_at >= datetime('now','-6 days') GROUP BY substr(e.clicked_at,1,10) ORDER BY day ASC").bind(actor.id).all(),
+      env.DB.prepare("SELECT date(e.clicked_at,'-3 hours') AS day, COUNT(*) AS clicks, COUNT(DISTINCT e.visitor_hash) AS visitors FROM click_events e JOIN links l ON l.id=e.link_id WHERE l.owner_id=? AND e.qualified=2 AND e.clicked_at >= datetime(date('now','-3 hours','-6 days'),'+3 hours') GROUP BY date(e.clicked_at,'-3 hours') ORDER BY day ASC").bind(actor.id).all(),
       env.DB.prepare('SELECT e.country,COUNT(*) AS clicks FROM click_events e JOIN links l ON l.id=e.link_id WHERE l.owner_id=? AND e.qualified=2 GROUP BY e.country ORDER BY clicks DESC LIMIT 5').bind(actor.id).all(),
-      env.DB.prepare("SELECT a.classification,SUM(a.attempts) AS attempts FROM request_audit_daily a JOIN links l ON l.id=a.link_id WHERE l.owner_id=? AND a.day >= date('now','-6 days') GROUP BY a.classification").bind(actor.id).all()
+      env.DB.prepare("SELECT a.classification,SUM(a.attempts) AS attempts FROM request_audit_daily a JOIN links l ON l.id=a.link_id WHERE l.owner_id=? AND a.day >= date('now','-3 hours','-6 days') GROUP BY a.classification").bind(actor.id).all()
     ]);
-    const today=new Date().toISOString().slice(0,10);
+    const today=brasiliaDay();
     const todayClicks=(seven.results||[]).find(x=>x.day===today)?.clicks||0;
-    return json({totals:{...total,today_clicks:todayClicks},days:seven.results||[],countries:countries.results||[],audit:audit.results||[]});
+    return json({totals:{...total,today_clicks:todayClicks},today,timezone:BRAZIL_TIME_ZONE,days:seven.results||[],countries:countries.results||[],audit:audit.results||[]});
   }
   return error('Rota não encontrada.',404);
 }
@@ -286,7 +291,7 @@ async function redirect(req,env,ctx,slug){
       await env.DB.prepare(
         'INSERT INTO request_audit_daily(link_id,day,classification,attempts) VALUES(?,?,?,1) '+
         'ON CONFLICT(link_id,day,classification) DO UPDATE SET attempts=attempts+1'
-      ).bind(row.id,new Date().toISOString().slice(0,10),resultType).run();
+      ).bind(row.id,brasiliaDay(),resultType).run();
     }catch(e){console.error(JSON.stringify({event:'click_tracking_error',error:String(e)}));}
   })());
   return new Response(null,{status:302,headers:{location:target,'cache-control':'no-store','x-robots-tag':'noindex, nofollow','referrer-policy':'no-referrer'}});
@@ -309,4 +314,4 @@ export default {
     }catch(e){console.error(JSON.stringify({event:'request_error',error:String(e)}));return error('Ocorreu um erro interno.',500);}
   }
 };
-export const __test={validateDestination,validateCode,createCode,signSession,verifySession,shouldCountClick,classifyRedirect};
+export const __test={validateDestination,validateCode,createCode,signSession,verifySession,shouldCountClick,classifyRedirect,brasiliaDay};
