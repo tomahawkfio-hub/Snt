@@ -60,3 +60,10 @@ Outras solicitações continuam recebendo o redirecionamento normal, mas não au
 `npm test` executa os testes locais no Node.js 20+.
 
 **Avisos:** O repositório está público; não inclua credenciais ou chaves secretas. URLs HTTP(S) são validadas, mas políticas externas (inclusive Facebook/Meta) podem limitar redirecionamentos. Cloudflare pode cobrar ao exceder quotas gratuitas.
+## Demonstração identificada de visualizações (24/11/2026)
+
+- As **37.598 visualizações fictícias** do dia 24/11/2026 são distribuídas apenas entre os 12 links do superadministrador na tabela `demo_daily_views`; os contadores reais em `links.interaction_clicks` e os eventos em `click_events` continuam intocados.
+- A rota `GET /api/demo` exige sessão de superadmin e retorna a **simulação datada mais recente até hoje, no horário de Brasília**, mantendo visível o cenário de 24/11/2026 após a virada do dia, sem rotulá-lo como tráfego atual. Assinantes recebem `403` e não recebem dados falsos.
+- O painel mostra a seção **Simulação de visualizações — DADOS FICTÍCIOS**, discriminando os valores por link. A lista dos links mostra rótulos `FICTÍCIO` separados de `interações reais`.
+- Não substituir métricas comerciais ou históricas por estes dados; não apresentar estas visualizações como visitantes verificados.
+- A migração `migrations/20261124_demo_daily_views.sql` cria a tabela e o índice; a alocação de uma data é uma operação separada, já realizada em D1.

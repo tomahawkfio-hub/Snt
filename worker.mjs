@@ -189,6 +189,23 @@ async function api(req,env,path,ctx){
   if(managed)return managed;
   if(actor.must_change_password)return error('Defina uma senha pessoal antes de acessar o painel.',403);
   if(!actor.active)return error('Sua assinatura está inativa ou vencida. Entre em contato com o administrador.',403);
+  if(path==='/api/demo'&&req.method==='GET'){
+    // Apenas superadmin; dados simulados nunca entram em cliques reais.
+    if(actor.role!=='superadmin')return error('Esta demonstração está disponível somente ao superadministrador.',403);
+    const today=brasiliaDay();
+    const latest=await env.DB.prepare('SELECT MAX(day) AS day FROM demo_daily_views WHERE owner_id=? AND day<=?').bind(actor.id,today).first();
+    const day=latest?.day||today;
+    const result=await env.DB.prepare(
+      "SELECT l.code,d.views FROM demo_daily_views d "+
+      "JOIN links l ON l.id=d.link_id "+
+      "WHERE d.owner_id=? AND l.owner_id=? AND d.day=? AND l.disabled=0 "+
+      "ORDER BY d.views DESC,l.code ASC"
+    ).bind(actor.id,actor.id,day).all();
+    const links=result.results||[];
+    return json({type:'simulation',label:'DADOS FICTÍCIOS — DEMONSTRAÇÃO',day,
+      timezone:'America/Sao_Paulo',
+      total:links.reduce((sum,l)=>sum+Number(l.views||0),0),links});
+  }
   if(path==='/api/links'&&req.method==='GET'){
     const r=await env.DB.prepare("SELECT id,code,original_url,COALESCE(NULLIF(title,''),social_title) AS title,social_image,interaction_clicks AS clicks,created_at FROM links WHERE owner_id=? AND disabled=0 ORDER BY created_at DESC LIMIT 150").bind(actor.id).all();
     // Ao abrir o painel, atualiza em segundo plano as notícias antigas sem prévia.
