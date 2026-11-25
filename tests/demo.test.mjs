@@ -64,3 +64,51 @@ test('37.598 fictícios ficam preservados só como arquivo do superadmin',()=>{
   assert.match(dashboard,/if\(state\.role!=='superadmin'/);
   assert.match(dashboard,/state\.role==='superadmin'\?api\('\/api\/demo'\)/);
 });
+
+test('histórico ilustrativo mostra hoje e ontem em Brasília apenas ao superadmin',async()=>{
+  const today=__test.brasiliaDay();
+  const previous=new Date(today+'T12:00:00Z');previous.setUTCDate(previous.getUTCDate()-1);
+  const yesterday=previous.toISOString().slice(0,10);
+  const queries=[];
+  const env={SESSION_SECRET:secret,DB:{prepare(sql){
+    return {bind:(...params)=>{queries.push({sql,params});
+      return {all:async()=>({results:[{day:today,views:87},{day:yesterday,views:37598}]})};
+    }};
+  }}};
+  const session=await __test.signSession(secret);
+  const response=await worker.fetch(new Request('https://snt.today/api/demo/days',{
+    headers:{cookie:'snt_session='+session}
+  }),env,{waitUntil(){}});
+  assert.equal(response.status,200);
+  const result=await response.json();
+  assert.equal(result.type,'simulation');
+  assert.match(result.label,/FICTÍCIOS/);
+  assert.deepEqual(result.days,[
+    {day:today,period:'hoje',views:87},
+    {day:yesterday,period:'ontem',views:37598}
+  ]);
+  assert.ok(queries.some(x=>x.sql.includes('demo_daily_views')&&x.sql.includes('l.owner_id=?')&&x.params[0]==='superadmin'&&x.params[1]==='superadmin'&&x.params[2]===today&&x.params[3]===yesterday));
+});
+test('assinante não consulta histórico fictício do superadmin',async()=>{
+  const member={id:'c43b5a61-d170-4d16-83dc-1e2fb669ff04',role:'member',status:'active',
+    paid_until:'2099-01-01',session_version:1,email:'cliente@example.com',display_name:'Assinante',
+    plan_cents:990,must_change_password:0};
+  const token=await signMemberSession(secret,member);
+  let touchedDemo=false;
+  const db={prepare(sql){if(sql.includes('demo_daily_views'))touchedDemo=true;
+    return {bind:()=>({first:async()=>member,all:async()=>({results:[]})})};
+  }};
+  const response=await worker.fetch(new Request('https://snt.today/api/demo/days',{headers:{cookie:'snt_session='+token}}),{SESSION_SECRET:secret,DB:db},{waitUntil(){}});
+  assert.equal(response.status,403);
+  assert.equal(touchedDemo,false);
+});
+test('dashboard preserva estatísticas reais e mostra datas fictícias separadas',()=>{
+  assert.match(dashboard,/id="demoDailyHistory"/);
+  assert.match(dashboard,/Exemplo de histórico de visualizações/);
+  assert.match(dashboard,/DADOS FICTÍCIOS/);
+  assert.match(dashboard,/id="demoTodayViews"/);
+  assert.match(dashboard,/id="demoYesterdayViews"/);
+  assert.match(dashboard,/state\.role==='superadmin'\?api\('\/api\/demo\/days'\)/);
+  assert.match(dashboard,/\$\('totalClicks'\)\.textContent=number\(a\.total_clicks\)/);
+  assert.match(dashboard,/\$\('todayClicks'\)\.textContent=number\(a\.today_clicks\)/);
+});
