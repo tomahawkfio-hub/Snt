@@ -47,31 +47,15 @@ test('conta comum não consulta demonstração de superadmin',async()=>{
   assert.equal(response.status,403);
   assert.equal(attemptedDemoQuery,false);
 });
-test('interface deixa rótulos de simulação visíveis e não troca os reais',()=>{
-  assert.match(dashboard,/DADOS FICTÍCIOS/);
-  assert.match(dashboard,/Simulação de visualizações/);
+test('dashboard principal apresenta demonstracao sem botao, rotulada e apenas na conta principal',()=>{
+  assert.match(dashboard,/MODO DEMONSTRAÇÃO — DADOS FICTÍCIOS/);
+  assert.match(dashboard,/Visualizações simuladas/);
   assert.match(dashboard,/visualizações FICTÍCIAS/);
   assert.match(dashboard,/interações reais/);
-});
-
-test('alternância da visualização fictícia somente no superadmin e com aviso visível',()=>{
-  assert.match(dashboard,/id="demoSwitcher"/);
-  assert.match(dashboard,/id="demoModeWarning"/);
-  assert.match(dashboard,/MODO DEMONSTRAÇÃO — DADOS FICTÍCIOS/);
-  assert.match(dashboard,/identity.role!=='superadmin'/);
-  assert.match(dashboard,/state.role==='superadmin'&&state.demoMode/);
-  assert.match(dashboard,/Voltar aos dados reais/);
-  assert.match(dashboard,/Visualizações simuladas/);
-  assert.match(dashboard,/renderStats\(state.realStats\)/);
-  assert.match(dashboard,/Dados reais dos cliques/);
-});
-
-test('painel do superadmin inicia em demonstracao rotulada sem alterar contadores reais',()=>{
   assert.match(dashboard,/state\.demoMode=identity\.role==='superadmin'/);
-  assert.match(dashboard,/MODO DEMONSTRAÇÃO — DADOS FICTÍCIOS/);
-  assert.match(dashboard,/id="demoModeButton"[^>]*aria-pressed="true"/);
-  assert.match(dashboard,/Voltar aos dados reais/);
-  assert.match(dashboard,/const shown=simulated\?Number\(state\.demo\.total\):Number\(a\.total_clicks\|\|0\)/);
   assert.match(dashboard,/state\.role==='superadmin'&&state\.demoMode/);
   assert.match(dashboard,/state\.role==='superadmin'\?api\('\/api\/demo'\)/);
+  assert.doesNotMatch(dashboard,/id="demoModeButton"/);
+  assert.doesNotMatch(dashboard,/id="demoArea"/);
+  assert.match(dashboard,/const shown=simulated\?Number\(state\.demo\.total\):Number\(a\.total_clicks\|\|0\)/);
 });
