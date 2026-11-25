@@ -61,7 +61,7 @@ test('37.598 fictícios ficam preservados só como arquivo do superadmin',()=>{
   assert.match(dashboard,/Cenário de demonstração arquivado:/);
   assert.match(dashboard,/não entram nos contadores reais/);
   assert.match(dashboard,/if\(state\.role!=='superadmin'/);
-  assert.match(dashboard,/state\.role==='superadmin'\?api\('\/api\/demo'\)/);
+  assert.match(dashboard,/ADMIN_PRESENTATION_PREVIEW&&state\.role==='superadmin'\?api\('\/api\/demo'\)/);
 });
 
 test('histórico ilustrativo mostra hoje e ontem em Brasília apenas ao superadmin',async()=>{
@@ -103,7 +103,7 @@ test('assinante não consulta histórico fictício do superadmin',async()=>{
 });
 
 test('superadmin recebe a prévia no dashboard principal, com identificação visível e reversão',()=>{
-  assert.match(dashboard,/const ADMIN_PRESENTATION_PREVIEW=true/);
+  assert.match(dashboard,/const ADMIN_PRESENTATION_PREVIEW=false/);
   assert.match(dashboard,/const PRESENTATION_REFERENCE_DATE='2026-11-25'/);
   assert.match(dashboard,/id="presentationNotice"/);
   assert.match(dashboard,/dados de exemplo dos dias 24 e 25\/11\/2026/);
@@ -122,5 +122,13 @@ test('contadores reais continuam acessíveis sem o modo de apresentação',()=>{
   assert.match(dashboard,/totals\.total_clicks/);
   assert.match(dashboard,/totals\.today_clicks/);
   assert.match(dashboard,/data=preview\?days\.map/);
-  assert.match(dashboard,/state\.role==='superadmin'\?api\('\/api\/demo\/days\?on='\+PRESENTATION_REFERENCE_DATE\)/);
+  assert.match(dashboard,/ADMIN_PRESENTATION_PREVIEW&&state\.role==='superadmin'\?api\('\/api\/demo\/days\?on='\+PRESENTATION_REFERENCE_DATE\)/);
+});
+
+test('dashboard inicia com dados reais e sem buscar cenário fictício',()=>{
+  assert.match(dashboard,/const ADMIN_PRESENTATION_PREVIEW=false/);
+  assert.match(dashboard,/if\(!ADMIN_PRESENTATION_PREVIEW\|\|state\.role!=='superadmin'/);
+  assert.match(dashboard,/number\(preview\?preview\.today\+preview\.yesterday:totals\.total_clicks\)/);
+  assert.match(dashboard,/number\(preview\?preview\.today:totals\.today_clicks\)/);
+  assert.match(dashboard,/ADMIN_PRESENTATION_PREVIEW&&state\.role==='superadmin'\?api\('\/api\/demo'\)/);
 });
