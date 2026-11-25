@@ -65,3 +65,13 @@ test('alternância da visualização fictícia somente no superadmin e com aviso
   assert.match(dashboard,/renderStats\(state.realStats\)/);
   assert.match(dashboard,/Dados reais dos cliques/);
 });
+
+test('painel do superadmin inicia em demonstracao rotulada sem alterar contadores reais',()=>{
+  assert.match(dashboard,/state\.demoMode=identity\.role==='superadmin'/);
+  assert.match(dashboard,/MODO DEMONSTRAÇÃO — DADOS FICTÍCIOS/);
+  assert.match(dashboard,/id="demoModeButton"[^>]*aria-pressed="true"/);
+  assert.match(dashboard,/Voltar aos dados reais/);
+  assert.match(dashboard,/const shown=simulated\?Number\(state\.demo\.total\):Number\(a\.total_clicks\|\|0\)/);
+  assert.match(dashboard,/state\.role==='superadmin'&&state\.demoMode/);
+  assert.match(dashboard,/state\.role==='superadmin'\?api\('\/api\/demo'\)/);
+});
