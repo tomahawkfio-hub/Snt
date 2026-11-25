@@ -67,3 +67,10 @@ Outras solicitações continuam recebendo o redirecionamento normal, mas não au
 - O painel mostra a seção **Simulação de visualizações — DADOS FICTÍCIOS**, discriminando os valores por link. A lista dos links mostra rótulos `FICTÍCIO` separados de `interações reais`.
 - Não substituir métricas comerciais ou históricas por estes dados; não apresentar estas visualizações como visitantes verificados.
 - A migração `migrations/20261124_demo_daily_views.sql` cria a tabela e o índice; a alocação de uma data é uma operação separada, já realizada em D1.
+
+### Histórico ilustrativo de 24–25/11/2026 (somente superadmin)
+
+- Tabela de demonstração `demo_daily_views`: **24/11/2026 = 37.598** visualizações fictícias, **25/11/2026 = 87** visualizações fictícias, repartidas entre os 12 links do superadmin.
+- A rota `GET /api/demo/days` retorna esses dois dias apenas para a conta superadmin; a data usa horário de Brasília. Assinantes recebem 403.
+- A interface mostra os valores em cards próprios com o título **Exemplo de histórico de visualizações — DADOS FICTÍCIOS**; não inclui esses números nos indicadores de cliques reais, no gráfico real, na lista de links ou na cobrança.
+- O histórico permanece preservado no banco; após a virada do dia, os rótulos “hoje” e “ontem” acompanham o calendário e não reutilizam valores passados como sendo de dias novos.
