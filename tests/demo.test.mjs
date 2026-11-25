@@ -47,12 +47,11 @@ test('conta comum não consulta demonstração de superadmin',async()=>{
   assert.equal(response.status,403);
   assert.equal(attemptedDemoQuery,false);
 });
-test('dashboard principal usa somente valores reais, independentemente da conta',()=>{
-  assert.match(dashboard,/\$\('totalClicks'\)\.textContent=number\(a\.total_clicks\)/);
-  assert.match(dashboard,/\$\('todayClicks'\)\.textContent=number\(a\.today_clicks\)/);
-  assert.match(dashboard,/const data=days\.map\(day=>Number\(\(stats\.days\|\|\[\]\)\.find/);
+test('assinantes usam cliques reais e o superadmin tem retorno garantido aos reais',()=>{
+  assert.match(dashboard,/if\(!ADMIN_PRESENTATION_PREVIEW\|\|state\.role!=='superadmin'/);
+  assert.match(dashboard,/number\(preview\?preview\.today\+preview\.yesterday:totals\.total_clicks\)/);
+  assert.match(dashboard,/number\(preview\?preview\.today:totals\.today_clicks\)/);
   assert.match(dashboard,/number\(x\.clicks\)\+' cliques qualificados'/);
-  assert.doesNotMatch(dashboard,/demoByCode/);
   assert.doesNotMatch(dashboard,/state\.demoMode/);
   assert.doesNotMatch(dashboard,/id="demoModeButton"/);
   assert.doesNotMatch(dashboard,/id="demoArea"/);
